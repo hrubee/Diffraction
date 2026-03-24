@@ -15,23 +15,9 @@ RUN groupadd -r sandbox && useradd -r -g sandbox -d /sandbox -s /bin/bash sandbo
     && mkdir -p /sandbox/.diffraction /sandbox/.diffraction \
     && chown -R sandbox:sandbox /sandbox
 
-# Install Diffraction (Core Agent) locally
-COPY agent/ /opt/agent-source/
-RUN cd /opt/agent-source/diffraction \
-    && npm install --omit=dev --ignore-scripts \
-    && npm pack \
-    && npm install -g ./*.tgz \
-    && rm -rf /opt/agent-source
-
-# Install Diffraction CLI locally (strip out npm registry dependency to build offline)
-COPY cli/ /opt/cli-source/
-RUN cd /opt/cli-source \
-    && npm pkg delete dependencies.diffraction \
-    && npm install --omit=dev \
-    && npm pack \
-    && npm install -g ./*.tgz \
-    && mv /usr/local/bin/diffraction /usr/local/bin/diffraction-cli \
-    && rm -rf /opt/cli-source
+# Install Diffraction CLI (published on npm)
+RUN npm install -g diffraction@2026.3.11 \
+    && mv /usr/local/bin/diffraction /usr/local/bin/diffraction-cli
 
 # Install PyYAML for blueprint runner
 RUN pip3 install --break-system-packages pyyaml

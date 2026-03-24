@@ -450,15 +450,6 @@ async function createSandbox(gpu) {
   run(`cp -r "${path.join(ROOT, "diffraction")}" "${buildCtx}/diffraction"`);
   run(`cp -r "${path.join(ROOT, "diffraction-blueprint")}" "${buildCtx}/diffraction-blueprint"`);
   run(`cp -r "${path.join(ROOT, "scripts")}" "${buildCtx}/scripts"`);
-  
-  // also copy the CLI source itself into buildCtx/cli
-  run(`mkdir -p "${buildCtx}/cli"`);
-  run(`cp -r "${path.join(ROOT, "package.json")}" "${path.join(ROOT, "bin")}" "${path.join(ROOT, "lib")}" "${buildCtx}/cli/"`, { ignoreError: true });
-
-  // and copy the agent/diffraction source into buildCtx/agent
-  run(`mkdir -p "${buildCtx}/agent"`);
-  run(`cp -r "${path.join(ROOT, "..", "agent", "diffraction")}" "${buildCtx}/agent/"`, { ignoreError: true });
-
   run(`rm -rf "${buildCtx}/diffraction/node_modules" "${buildCtx}/diffraction/src"`, { ignoreError: true });
 
   // Create sandbox (use -- echo to avoid dropping into interactive shell)
