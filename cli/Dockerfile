@@ -15,9 +15,10 @@ RUN groupadd -r sandbox && useradd -r -g sandbox -d /sandbox -s /bin/bash sandbo
     && mkdir -p /sandbox/.diffraction /sandbox/.diffraction \
     && chown -R sandbox:sandbox /sandbox
 
-# Install Diffraction CLI (published on npm)
-RUN npm install -g diffraction@2026.3.11 \
-    && mv /usr/local/bin/diffraction /usr/local/bin/diffraction-cli
+# Install Openclaw CLI from npm (the core Diffraction agent engine)
+# The published package is 'openclaw'; the binary it creates is 'openclaw'.
+RUN npm install -g openclaw@2026.3.11 \
+    && mv /usr/local/bin/openclaw /usr/local/bin/diffraction-cli
 
 # Install PyYAML for blueprint runner
 RUN pip3 install --break-system-packages pyyaml
