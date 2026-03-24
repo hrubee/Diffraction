@@ -1,0 +1,33 @@
+{
+  "name": "diffraction",
+  "version": "0.1.0",
+  "description": "Diffraction — run Diffraction inside OpenShell with NVIDIA inference",
+  "license": "Apache-2.0",
+  "bin": {
+    "diffraction": "./bin/diffraction.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "prepublishOnly": "cd diffraction && npm install --ignore-scripts && npm run build"
+  },
+  "dependencies": {
+    "diffraction": "2026.3.11"
+  },
+  "files": [
+    "bin/",
+    "diffraction/dist/",
+    "diffraction/diffraction.plugin.json",
+    "diffraction/package.json",
+    "diffraction-blueprint/",
+    "scripts/",
+    "Dockerfile",
+    ".dockerignore"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NVIDIA/Diffraction.git"
+  }
+}
