@@ -540,7 +540,7 @@ async function createSandbox(gpu) {
 // ── Step 4: NIM ──────────────────────────────────────────────────
 
 async function setupNim(sandboxName, gpu) {
-  step(4, 7, "Configuring inference (NIM)");
+  step(4, 7, "Configuring AI inference");
 
   let model = null;
   let provider = "nvidia-nim";
@@ -560,7 +560,7 @@ async function setupNim(sandboxName, gpu) {
   options.push({
     key: "cloud",
     label:
-      "NVIDIA Cloud API (build.nvidia.com)" +
+      "Diffraction Cloud (NVIDIA-powered, build.nvidia.com)" +
       (!ollamaRunning && !(EXPERIMENTAL && vllmRunning) ? " (recommended)" : ""),
   });
   if (hasOllama || ollamaRunning) {
@@ -702,7 +702,7 @@ async function setupNim(sandboxName, gpu) {
     if (isNonInteractive()) {
       // In non-interactive mode, NVIDIA_API_KEY must be set via env var
       if (!process.env.NVIDIA_API_KEY) {
-        console.error("  NVIDIA_API_KEY is required for cloud provider in non-interactive mode.");
+        console.error("  NVIDIA_API_KEY is required for cloud inference in non-interactive mode.");
         console.error("  Set it via: NVIDIA_API_KEY=nvapi-... diffraction onboard --non-interactive");
         process.exit(1);
       }
@@ -711,7 +711,7 @@ async function setupNim(sandboxName, gpu) {
       model = model || (await promptCloudModel()) || DEFAULT_CLOUD_MODEL;
     }
     model = model || requestedModel || DEFAULT_CLOUD_MODEL;
-    console.log(`  Using NVIDIA Cloud API with model: ${model}`);
+    console.log(`  Using Diffraction Cloud inference with model: ${model}`);
   }
 
   registry.updateSandbox(sandboxName, { model, provider, nimContainer });
@@ -926,7 +926,7 @@ function printDashboard(sandboxName, model, provider) {
   const nimLabel = nimStat.running ? "running" : "not running";
 
   let providerLabel = provider;
-  if (provider === "nvidia-nim") providerLabel = "NVIDIA Cloud API";
+  if (provider === "nvidia-nim") providerLabel = "Diffraction Cloud (NVIDIA)";
   else if (provider === "vllm-local") providerLabel = "Local vLLM";
   else if (provider === "ollama-local") providerLabel = "Local Ollama";
 
@@ -935,7 +935,7 @@ function printDashboard(sandboxName, model, provider) {
   // console.log(`  Dashboard    http://localhost:18789/`);
   console.log(`  Sandbox      ${sandboxName} (Landlock + seccomp + netns)`);
   console.log(`  Model        ${model} (${providerLabel})`);
-  console.log(`  NIM          ${nimLabel}`);
+  console.log(`  Inference     ${nimStat.running ? "NIM container running" : providerLabel}`);
   console.log(`  ${"─".repeat(50)}`);
   console.log(`  Run:         diffraction ${sandboxName} connect`);
   console.log(`  Status:      diffraction ${sandboxName} status`);
@@ -950,9 +950,10 @@ async function onboard(opts = {}) {
   NON_INTERACTIVE = opts.nonInteractive || process.env.DIFFRACTION_NON_INTERACTIVE === "1";
 
   console.log("");
-  console.log("  Diffraction Onboarding");
+  console.log("  Diffraction — Enterprise AI Agent Setup");
+  console.log("  Powered by OpenShell (sandbox) + OpenClaw (agent)");
   if (isNonInteractive()) console.log("  (non-interactive mode)");
-  console.log("  ===================");
+  console.log("  " + "═".repeat(47));
 
   const gpu = await preflight();
   await startGateway(gpu);
