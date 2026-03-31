@@ -23,7 +23,7 @@ const policies = require("./lib/policies");
 const GLOBAL_COMMANDS = new Set([
   "onboard", "list", "deploy", "setup", "setup-spark",
   "start", "stop", "status", "uninstall",
-  "model", "hub",
+  "model", "hub", "doctor",
   "help", "--help", "-h",
 ]);
 
@@ -511,6 +511,145 @@ function handleHub(args) {
   }
 }
 
+// ── Doctor ───────────────────────────────────────────────────────
+
+function runDoctor() {
+  const recovery = require("./lib/runtime-recovery");
+  const { checkDiskSpace, checkMemory } = require("./lib/preflight");
+  let pass = 0, warn = 0, fail = 0;
+
+  function check(label, fn) {
+    try {
+      const result = fn();
+      if (result === true) { console.log(`  ✓ ${label}`); pass++; }
+      else if (result === false) { console.log(`  ✗ ${label}`); fail++; }
+      else { console.log(`  ⚠ ${label}: ${result}`); warn++; }
+    } catch (e) {
+      console.log(`  ✗ ${label}: ${e.message}`); fail++;
+    }
+  }
+
+  console.log("");
+  console.log("  Diffract Doctor — System Diagnostics");
+  console.log("  " + "─".repeat(45));
+  console.log("");
+
+  // Docker
+  check("Docker running", () => {
+    runCapture("docker info 2>/dev/null | head -1");
+    return true;
+  });
+
+  // Docker cgroup
+  check("Docker cgroup mode", () => {
+    const out = runCapture("cat /etc/docker/daemon.json 2>/dev/null || echo '{}'");
+    return out.includes("host") ? true : "cgroup-ns-mode not set to host";
+  });
+
+  // OpenShell
+  check("OpenShell installed", () => {
+    const out = runCapture("openshell --version 2>&1");
+    return out.includes("openshell") ? true : false;
+  });
+
+  // Node.js
+  check("Node.js >= 20", () => {
+    const major = parseInt(process.versions.node.split(".")[0], 10);
+    return major >= 20 ? true : `Node ${process.versions.node} (need 20+)`;
+  });
+
+  // Disk
+  check("Disk space (>= 5GB free)", () => {
+    const d = checkDiskSpace("/", 5);
+    return d.ok ? true : d.reason;
+  });
+
+  // Memory
+  check("Memory (>= 2GB free)", () => {
+    const m = checkMemory(2048);
+    return m.ok ? true : m.reason;
+  });
+
+  // Gateway
+  check("OpenShell gateway", () => {
+    const out = runCapture("openshell status 2>&1");
+    const state = recovery.classifyGatewayStatus(out);
+    if (state.state === "connected") return true;
+    return `${state.state} (${state.reason})`;
+  });
+
+  // Sandbox
+  check("Sandbox running", () => {
+    const out = runCapture("openshell sandbox list 2>&1");
+    return out.includes("Ready") ? true : "no sandbox in Ready state";
+  });
+
+  // Port forward
+  check("Port 18789 forwarded", () => {
+    const out = runCapture("openshell forward list 2>&1");
+    return out.includes("running") ? true : "port forward not active";
+  });
+
+  // Dashboard
+  check("Dashboard reachable", () => {
+    const out = runCapture("curl -sf --max-time 5 -o /dev/null -w '%{http_code}' http://127.0.0.1:18789/ 2>&1");
+    return out === "200" ? true : `HTTP ${out}`;
+  });
+
+  // Inference
+  check("Inference provider configured", () => {
+    const out = runCapture("openshell inference get 2>&1");
+    return out.includes("Provider:") && !out.includes("Not configured") ? true : "not configured";
+  });
+
+  // Caddy
+  check("Caddy running", () => {
+    const out = runCapture("systemctl is-active caddy 2>/dev/null || echo inactive");
+    return out.trim() === "active" ? true : "caddy is " + out.trim();
+  });
+
+  // Services
+  const { sandboxes } = registry.listSandboxes();
+  const defaultSb = sandboxes.length > 0 ? sandboxes[0].name : null;
+  if (defaultSb) {
+    const pidDir = `/tmp/diffract-services-${defaultSb}`;
+    check("Gateway watchdog", () => {
+      try {
+        const pid = require("fs").readFileSync(`${pidDir}/gateway-watchdog.pid`, "utf-8").trim();
+        process.kill(parseInt(pid), 0);
+        return true;
+      } catch { return "not running"; }
+    });
+
+    check("Telegram bridge", () => {
+      try {
+        const pid = require("fs").readFileSync(`${pidDir}/telegram-bridge.pid`, "utf-8").trim();
+        process.kill(parseInt(pid), 0);
+        return true;
+      } catch { return "not running (set TELEGRAM_BOT_TOKEN and run diffract start)"; }
+    });
+  }
+
+  // Session
+  check("Onboard session", () => {
+    const session = require("./lib/onboard-session");
+    const s = session.loadSession();
+    if (!s) return "no session (run diffract onboard)";
+    return s.status === "complete" ? true : `status: ${s.status}`;
+  });
+
+  console.log("");
+  console.log(`  Results: ${pass} passed, ${warn} warnings, ${fail} failed`);
+  if (fail > 0) {
+    console.log("");
+    console.log("  Fix suggestions:");
+    console.log("    diffract onboard          — re-run setup");
+    console.log("    diffract start            — start services");
+    console.log("    openshell forward start --background 18789 <sandbox>");
+  }
+  console.log("");
+}
+
 // ── Help ─────────────────────────────────────────────────────────
 
 function help() {
@@ -552,6 +691,7 @@ function help() {
     diffract start                   Start services (Telegram, tunnel)
     diffract stop                    Stop all services
     diffract status                  Show sandbox list and service status
+    diffract doctor                  Diagnose and troubleshoot issues
     diffract uninstall [flags]       Run uninstall.sh (local first, curl fallback)
 
   Uninstall flags:
@@ -589,6 +729,7 @@ const [cmd, ...args] = process.argv.slice(2);
       case "list":        listSandboxes(); break;
       case "model":       handleModel(args); break;
       case "hub":         handleHub(args); break;
+      case "doctor":      runDoctor(); break;
       default:            help(); break;
     }
     return;
