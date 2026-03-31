@@ -1,152 +1,126 @@
-# Diffraction
+# Diffract
 
-**Enterprise AI Agent Distribution** — a managed, secure wrapper that deploys autonomous AI agents safely inside any organisation.
+Deploy safe, autonomous AI agents with one command.
 
-Diffraction plays the same role NemoClaw plays for NVIDIA: it takes the raw power of autonomous agents and packages them into a controlled, policy-governed, enterprise-ready service — with one command.
-
----
-
-## Architecture
-
-Diffraction is a **three-layer stack**, each layer is a separate open technology:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│               DIFFRACTION  (this repo)                  │
-│         Enterprise distributor & management CLI         │
-│  Policy management · Inference routing · Single command │
-└───────────────────────┬─────────────────────────────────┘
-                        │ orchestrates
-         ┌──────────────┴──────────────┐
-         ▼                             ▼
-┌─────────────────┐         ┌──────────────────────────┐
-│   OpenShell     │         │       OpenClaw           │
-│  (engine/)      │         │       (agent/)           │
-│                 │         │                          │
-│  Secure runtime │         │  Autonomous AI agent     │
-│  Landlock FS    │         │  Language model brain    │
-│  seccomp calls  │         │  Skills, tools, memory   │
-│  Network NS     │         │  Multi-provider LLM      │
-└─────────────────┘         └──────────────────────────┘
-```
-
-| Layer | What it does | Equivalent in NVIDIA stack |
-|---|---|---|
-| **Diffraction** (`cli/`) | Distributor. CLI, policies, inference routing, setup wizard | NemoClaw |
-| **OpenShell** (`engine/`) | Secure runtime that sandboxes the agent | OpenShell |
-| **OpenClaw** (`agent/`) | The AI agent — reasoning, tools, memory | OpenClaw |
-
-### Why this architecture matters
-
-- **OpenShell** enforces security *outside* the agent's own process — a compromised agent cannot change its own jail.
-- **OpenClaw** runs *inside* the sandbox, so it has zero access to the host filesystem, network, or credentials beyond what policy explicitly allows.
-- **Diffraction** manages the whole thing: it creates the sandbox, injects the right policies, routes inference (local or cloud), and gives IT teams YAML files they can audit and approve.
-
----
-
-## What Diffraction adds on top
-
-| Capability | How |
-|---|---|
-| Single-command setup | `./diffraction.sh onboard` — 7-step wizard from zero to running agent |
-| Policy management | YAML policy files in `cli/diffraction-blueprint/policies/` |
-| Inference routing | Choose: Diffraction Cloud (NVIDIA API), local Ollama, local vLLM, or NIM GPU |
-| Privacy control | Sensitive traffic stays local; general queries can use cloud models |
-| Enterprise packaging | Git-clonable, Docker-based, no registry dependency |
-
----
-
-## Requirements
-
-| Tool | Minimum version |
-|---|---|
-| [Node.js](https://nodejs.org) | v20+ |
-| [Docker Desktop](https://www.docker.com/products/docker-desktop) | Latest stable |
-
----
+Diffract sandboxes AI agents with kernel-level isolation (Landlock, seccomp, network namespaces), routes inference across any provider, and gives enterprises YAML-based policy control over what agents can access.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/hrubee/Diffraction.git
-cd Diffraction
+# Prerequisites: Ubuntu 24.04, Docker, 4+ cores, 8GB+ RAM
+curl -fsSL https://get.docker.com | sh
+curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
 
-chmod +x diffraction.sh
-./diffraction.sh onboard
+# Install Diffract
+git clone https://github.com/hrubee/Diffraction.git ~/diffract
+cd ~/diffract/cli && npm install --omit=dev --ignore-scripts
+ln -sf ~/diffract/diffract.sh /usr/local/bin/diffract
+
+# Deploy
+export NVIDIA_API_KEY="nvapi-..."
+diffract onboard
 ```
 
-The 7-step wizard handles everything:
-1. Preflight checks
-2. Start OpenShell gateway (secure sandbox cluster)
-3. Create named sandbox  
-4. Configure AI inference (cloud or local)
-5. Set up inference provider inside sandbox
-6. Deploy OpenClaw agent inside sandbox
-7. Apply security policy presets
+## Architecture
 
----
+```
+Host
+├── diffract CLI        → onboard, sandbox management, services
+├── openshell           → sandbox runtime, L7 proxy, network policies
+├── Caddy               → HTTPS reverse proxy
+└── telegram-bridge     → Telegram ↔ agent relay
+
+Sandbox (isolated k3s pod)
+├── openshell-sandbox   → network namespace, L7 proxy, TLS MITM
+├── diffract entrypoint → proxy env, gateway startup, security hardening
+├── diffract-cli        → OpenClaw gateway + agent
+└── inference.local     → routed via L7 proxy to provider API
+```
+
+## Features
+
+**Security**
+- Landlock + seccomp + network namespace isolation
+- Deny-by-default network policies (YAML-based)
+- L7 proxy with TLS MITM inspection
+- API keys never enter the sandbox — injected by proxy at network layer
+- Root-owned immutable config with SHA256 integrity hash
+- Capability dropping, privilege separation (gateway/sandbox users)
+- Fork bomb prevention, PATH lockdown, symlink verification
+
+**Inference**
+- 11 built-in models across NVIDIA, OpenAI, Anthropic
+- Extensible model registry — add models without code changes
+- Switch models at runtime: `openshell inference set --provider X --model Y`
+- Privacy router: credentials stored on host, never in sandbox
+
+**Channels**
+- Web dashboard (HTTPS via Caddy)
+- Telegram bot with allowlist + rate limiting
+- More channels coming (Discord, Slack)
+
+**Operations**
+- One-command onboard with session resumability
+- Gateway auto-restart watchdog
+- Disk + memory preflight checks
+- Runtime recovery diagnostics
+- Skills marketplace (`diffract hub`)
 
 ## Commands
 
-All run from the **repository root**:
-
-| Command | What it does |
-|---|---|
-| `./diffraction.sh onboard` | First-time setup wizard |
-| `./diffraction.sh <name> connect` | Connect to a running sandbox |
-| `./diffraction.sh <name> status` | Health check |
-| `./diffraction.sh <name> logs --follow` | Live logs |
-| `./diffraction.sh <name> destroy` | Remove a sandbox |
-| `./diffraction.sh list` | List all sandboxes |
-| `./diffraction.sh status` | Global status |
-| `./diffraction.sh stop` | Stop all services |
-| `./diffraction.sh uninstall` | Remove everything |
-
-Or use npm equivalents: `npm run onboard`, `npm start`, etc.
-
----
-
-## Security Model
-
-Diffraction sandboxes use three complementary isolation mechanisms:
-
-- **Landlock** — filesystem isolation. The agent is restricted to `/sandbox` and `/tmp`. It cannot read your SSH keys, `.env` files, or any host path.
-- **seccomp** — system call filtering. Dangerous syscalls (mount, ptrace, etc.) are blocked at the kernel level.
-- **Network namespaces** — default-deny egress. The agent cannot make outbound requests unless the policy file explicitly allows that domain.
-
-Policy files live in `cli/diffraction-blueprint/policies/` and are plain YAML — reviewable by any IT or security team before deployment.
-
----
-
-## Inference Options
-
-| Option | When to use |
-|---|---|
-| **Diffraction Cloud** (NVIDIA API) | Fastest setup. Requires `NVIDIA_API_KEY` from [build.nvidia.com](https://build.nvidia.com) |
-| **Local Ollama** | Privacy-first. Runs fully on your machine. Free. |
-| **Local NIM container** | Best performance on NVIDIA GPU hardware (experimental) |
-| **Local vLLM** | If you already run a vLLM server |
-
----
-
-## Project Structure
-
 ```
-Diffraction/
-├── cli/                    ← Diffraction (this is the business)
-│   ├── bin/diffraction.js  ← CLI entry point
-│   ├── diffraction-blueprint/
-│   │   └── policies/       ← Security policy YAML files
-│   ├── scripts/            ← Setup and service scripts
-│   └── Dockerfile          ← Sandbox container definition
-├── agent/                  ← OpenClaw (AI agent source)
-├── engine/                 ← OpenShell (secure runtime source)
-├── diffraction.sh          ← Root launcher (start here)
-└── package.json            ← npm entry point
+diffract onboard                 Interactive setup wizard
+diffract list                    List all sandboxes
+diffract <name> connect          Connect to sandbox shell
+diffract <name> status           Show sandbox health
+diffract <name> logs --follow    Stream live logs
+diffract <name> destroy          Delete sandbox
+diffract <name> policy-add       Add network policy preset
+diffract <name> policy-list      Show applied presets
+diffract model list              List available models
+diffract model add <id> [prov]   Add custom model
+diffract hub list                List installed skills
+diffract hub install <source>    Install skill from GitHub/local
+diffract hub deploy <name>       Push skill into sandbox
+diffract start                   Start services (Telegram, watchdog)
+diffract stop                    Stop all services
+diffract status                  Show system status
 ```
 
----
+## Telegram Integration
+
+```bash
+export TELEGRAM_BOT_TOKEN="your-token"
+export ALLOWED_CHAT_IDS="your-telegram-user-id"
+diffract start
+```
+
+## Network Policies
+
+Available presets: `discord`, `docker`, `huggingface`, `jira`, `npm`, `outlook`, `pypi`, `slack`, `telegram`
+
+```bash
+diffract my-assistant policy-add    # interactive preset selection
+diffract my-assistant policy-list   # show applied presets
+```
+
+## Model Management
+
+```bash
+diffract model list                                    # 11 built-in models
+diffract model add meta/llama-4-scout nvidia           # add custom
+openshell inference set --provider nvidia-nim --model nvidia/nemotron-3-super-120b-a12b
+```
+
+## Built On
+
+- [OpenShell](https://github.com/NVIDIA/OpenShell) — sandbox runtime and security engine
+- [OpenClaw](https://github.com/openclaw/openclaw) — AI agent gateway and chat interface
+
+## Documentation
+
+See [docs/setup-guide.md](docs/setup-guide.md) for the full setup guide.
 
 ## License
 
-Apache-2.0
+[Apache-2.0](LICENSE)
