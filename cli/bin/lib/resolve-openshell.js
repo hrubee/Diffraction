@@ -5,7 +5,7 @@ const { execSync } = require("child_process");
 const fs = require("fs");
 
 /**
- * Resolve the openshell binary path.
+ * Resolve the diffract binary path.
  *
  * Checks `command -v` first (must return an absolute path to prevent alias
  * injection), then falls back to common installation directories.
@@ -14,7 +14,7 @@ const fs = require("fs");
  * @param {string|null} [opts.commandVResult] Mock result (undefined = run real command)
  * @param {function} [opts.checkExecutable] (path) => boolean
  * @param {string} [opts.home] HOME override
- * @returns {string|null} Absolute path to openshell, or null if not found
+ * @returns {string|null} Absolute path to diffract, or null if not found
  */
 function resolveOpenshell(opts = {}) {
   const home = opts.home ?? process.env.HOME;

@@ -7,7 +7,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { ROOT, SCRIPTS, run, runCapture } = require("./runner");
+const { ROOT, PROJECT_ROOT, SCRIPTS, run, runCapture } = require("./runner");
 const {
   getDefaultOllamaModel,
   getLocalProviderBaseUrl,
@@ -20,7 +20,7 @@ const {
   CLOUD_MODEL_OPTIONS,
   DEFAULT_CLOUD_MODEL,
   DEFAULT_OLLAMA_MODEL,
-  getDiffractionPrimaryModel,
+  getDiffractPrimaryModel,
   getProviderSelectionConfig,
 } = require("./inference-config");
 const {
@@ -32,7 +32,8 @@ const { prompt, ensureApiKey, getCredential } = require("./credentials");
 const registry = require("./registry");
 const nim = require("./nim");
 const policies = require("./policies");
-const { checkPortAvailable } = require("./preflight");
+const { checkPortAvailable, checkDiskSpace, checkMemory } = require("./preflight");
+const session = require("./onboard-session");
 const EXPERIMENTAL = process.env.DIFFRACTION_EXPERIMENTAL === "1";
 
 // Non-interactive mode: set by --non-interactive flag or env var.
@@ -70,13 +71,13 @@ function isSandboxReady(output, sandboxName) {
 }
 
 /**
- * Determine whether stale Diffraction gateway output indicates a previous
+ * Determine whether stale Diffract gateway output indicates a previous
  * session that should be cleaned up before the port preflight check.
- * @param {string} gwInfoOutput - Raw output from `openshell gateway info -g diffraction`.
+ * @param {string} gwInfoOutput - Raw output from `openshell gateway info -g diffract`.
  * @returns {boolean}
  */
 function hasStaleGateway(gwInfoOutput) {
-  return typeof gwInfoOutput === "string" && gwInfoOutput.length > 0 && gwInfoOutput.includes("diffraction");
+  return typeof gwInfoOutput === "string" && gwInfoOutput.length > 0 && gwInfoOutput.includes("diffract");
 }
 
 function step(n, total, msg) {
@@ -102,7 +103,7 @@ function buildSandboxConfigSyncScript(selectionConfig) {
       : selectionConfig.endpointType === "vllm"
         ? "vllm-local"
         : "nvidia-nim";
-  const primaryModel = getDiffractionPrimaryModel(providerType, selectionConfig.model);
+  const primaryModel = getDiffractPrimaryModel(providerType, selectionConfig.model);
   const providerKey = "inference";
   const providerConfig = {
     baseUrl: selectionConfig.endpointUrl,
@@ -122,15 +123,15 @@ function buildSandboxConfigSyncScript(selectionConfig) {
   };
   return `
 set -euo pipefail
-mkdir -p ~/.diffraction ~/.diffraction
-cat > ~/.diffraction/config.json <<'EOF_DIFFRACTION_CFG'
+mkdir -p ~/.diffract ~/.diffract
+cat > ~/.diffract/config.json <<'EOF_DIFFRACTION_CFG'
 ${JSON.stringify(selectionConfig, null, 2)}
 EOF_DIFFRACTION_CFG
 python3 - <<'PYCFG'
 import json
 import os
 
-cfg_path = os.path.expanduser('~/.diffraction/diffraction.json')
+cfg_path = os.path.expanduser('~/.diffract/diffract.json')
 cfg = {}
 if os.path.exists(cfg_path):
     with open(cfg_path) as f:
@@ -147,22 +148,25 @@ with open(cfg_path, 'w') as f:
 
 os.chmod(cfg_path, 0o600)
 PYCFG
-diffraction models set ${shellQuote(primaryModel)} > /dev/null 2>&1 || true
+openshell models set ${shellQuote(primaryModel)} > /dev/null 2>&1 || true
 exit
 `.trim();
 }
 
 async function promptCloudModel() {
+  const modelRegistry = require("./model-registry");
+  const models = modelRegistry.getCloudModels();
+
   console.log("");
   console.log("  Cloud models:");
-  CLOUD_MODEL_OPTIONS.forEach((option, index) => {
+  models.forEach((option, index) => {
     console.log(`    ${index + 1}) ${option.label} (${option.id})`);
   });
   console.log("");
 
   const choice = await prompt("  Choose model [1]: ");
   const index = parseInt(choice || "1", 10) - 1;
-  return (CLOUD_MODEL_OPTIONS[index] || CLOUD_MODEL_OPTIONS[0]).id;
+  return (models[index] || models[0]).id;
 }
 
 async function promptOllamaModel() {
@@ -182,6 +186,15 @@ async function promptOllamaModel() {
   return options[index] || options[defaultIndex] || defaultModel;
 }
 
+function isDockerInstalled() {
+  try {
+    runCapture("which docker", { ignoreError: false });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isDockerRunning() {
   try {
     runCapture("docker info", { ignoreError: false });
@@ -189,6 +202,81 @@ function isDockerRunning() {
   } catch {
     return false;
   }
+}
+
+function detectPlatform() {
+  const platform = process.platform; // darwin, linux, win32
+  const arch = process.arch; // arm64, x64
+  return { platform, arch };
+}
+
+async function installDocker() {
+  const { platform, arch } = detectPlatform();
+
+  if (platform === "darwin") {
+    // macOS — try brew first, then direct download
+    const hasBrew = runCapture("which brew", { ignoreError: true });
+    if (hasBrew) {
+      console.log("  Installing Docker Desktop via Homebrew...");
+      // Remove stale binaries that block cask install
+      run("sudo rm -f /usr/local/bin/hub-tool /usr/local/bin/kubectl.docker 2>/dev/null || true", { ignoreError: true });
+      try {
+        run("brew install --cask docker-desktop", { stdio: "inherit" });
+        console.log("  Starting Docker Desktop...");
+        run("open -a Docker");
+        return waitForDocker();
+      } catch {
+        console.log("  Homebrew install failed. Trying direct download...");
+      }
+    }
+    // Direct DMG download
+    const dmgUrl = arch === "arm64"
+      ? "https://desktop.docker.com/mac/main/arm64/Docker.dmg"
+      : "https://desktop.docker.com/mac/main/amd64/Docker.dmg";
+    const dmgPath = "/tmp/Docker.dmg";
+    console.log("  Downloading Docker Desktop...");
+    run(`curl -fsSL -o "${dmgPath}" "${dmgUrl}"`, { stdio: "inherit" });
+    console.log("  Installing Docker Desktop...");
+    run(`hdiutil attach "${dmgPath}" -quiet`);
+    run('cp -R "/Volumes/Docker/Docker.app" /Applications/');
+    run(`hdiutil detach "/Volumes/Docker" -quiet`);
+    run(`rm -f "${dmgPath}"`);
+    console.log("  Starting Docker Desktop...");
+    run("open -a Docker");
+    return waitForDocker();
+
+  } else if (platform === "linux") {
+    console.log("  Installing Docker via official script...");
+    run("curl -fsSL https://get.docker.com | sh", { stdio: "inherit" });
+    // Add current user to docker group
+    const user = runCapture("whoami", { ignoreError: true });
+    if (user) {
+      run(`sudo usermod -aG docker ${user}`, { ignoreError: true });
+    }
+    run("sudo systemctl start docker", { ignoreError: true });
+    return waitForDocker();
+
+  } else {
+    console.error("  Automatic Docker install is not supported on this platform.");
+    console.error("  Install Docker manually: https://docs.docker.com/get-docker/");
+    return false;
+  }
+}
+
+function waitForDocker() {
+  console.log("  Waiting for Docker to start...");
+  const maxWait = 120; // seconds
+  for (let i = 0; i < maxWait; i += 3) {
+    if (isDockerRunning()) {
+      return true;
+    }
+    runCapture("sleep 3", { ignoreError: true });
+    if (i % 15 === 0 && i > 0) {
+      console.log(`  Still waiting for Docker... (${i}s)`);
+    }
+  }
+  console.error("  Docker did not start within 2 minutes.");
+  return false;
 }
 
 function getContainerRuntime() {
@@ -206,10 +294,10 @@ function isOpenshellInstalled() {
 }
 
 function installOpenshell() {
-  console.log("  Installing openshell CLI...");
+  console.log("  Installing diffract CLI...");
   run(`bash "${path.join(SCRIPTS, "install-openshell.sh")}"`, { ignoreError: true });
   const localBin = process.env.XDG_BIN_HOME || path.join(process.env.HOME || "", ".local", "bin");
-  if (fs.existsSync(path.join(localBin, "openshell")) && !process.env.PATH.split(path.delimiter).includes(localBin)) {
+  if (fs.existsSync(path.join(localBin, "diffract")) && !process.env.PATH.split(path.delimiter).includes(localBin)) {
     process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH}`;
   }
   return isOpenshellInstalled();
@@ -269,17 +357,35 @@ function getNonInteractiveModel(providerKey) {
 async function preflight() {
   step(1, 7, "Preflight checks");
 
-  // Docker
-  if (!isDockerRunning()) {
-    console.error("  Docker is not running. Please start Docker and try again.");
-    process.exit(1);
+  // Docker — auto-install if missing, auto-start if not running
+  if (!isDockerInstalled()) {
+    console.log("  Docker not found. Installing...");
+    const installed = await installDocker();
+    if (!installed) {
+      console.error("  Failed to install Docker. Install manually: https://docs.docker.com/get-docker/");
+      process.exit(1);
+    }
+  } else if (!isDockerRunning()) {
+    // Docker is installed but not running — try to start it
+    const { platform } = detectPlatform();
+    if (platform === "darwin") {
+      console.log("  Docker is installed but not running. Starting Docker Desktop...");
+      run("open -a Docker", { ignoreError: true });
+    } else {
+      console.log("  Docker is installed but not running. Starting Docker...");
+      run("sudo systemctl start docker", { ignoreError: true });
+    }
+    if (!waitForDocker()) {
+      console.error("  Could not start Docker. Please start it manually and try again.");
+      process.exit(1);
+    }
   }
   console.log("  ✓ Docker is running");
 
   const runtime = getContainerRuntime();
   if (isUnsupportedMacosRuntime(runtime)) {
-    console.error("  Podman on macOS is not supported by Diffraction at this time.");
-    console.error("  OpenShell currently depends on Docker host-gateway behavior that Podman on macOS does not provide.");
+    console.error("  Podman on macOS is not supported by Diffract at this time.");
+    console.error("  Diffract currently depends on Docker host-gateway behavior that Podman on macOS does not provide.");
     console.error("  Use Colima or Docker Desktop on macOS instead.");
     process.exit(1);
   }
@@ -287,33 +393,33 @@ async function preflight() {
     console.log(`  ✓ Container runtime: ${runtime}`);
   }
 
-  // OpenShell CLI
+  // Diffract CLI
   if (!isOpenshellInstalled()) {
-    console.log("  openshell CLI not found. Attempting to install...");
+    console.log("  diffract CLI not found. Attempting to install...");
     if (!installOpenshell()) {
-      console.error("  Failed to install openshell CLI.");
-      console.error("  Install manually: https://github.com/NVIDIA/OpenShell/releases");
+      console.error("  Failed to install diffract CLI.");
+      console.error("  Install manually: https://github.com/NVIDIA/Diffract/releases");
       process.exit(1);
     }
   }
-  console.log(`  ✓ openshell CLI: ${runCapture("openshell --version 2>/dev/null || echo unknown", { ignoreError: true })}`);
+  console.log(`  ✓ diffract CLI: ${runCapture("openshell --version 2>/dev/null || echo unknown", { ignoreError: true })}`);
 
-  // Clean up stale Diffraction session before checking ports.
+  // Clean up stale Diffract session before checking ports.
   // A previous onboard run may have left the gateway container and port
-  // forward running.  If a Diffraction-owned gateway is still present, tear
+  // forward running.  If a Diffract-owned gateway is still present, tear
   // it down so the port check below doesn't fail on our own leftovers.
-  const gwInfo = runCapture("openshell gateway info -g diffraction 2>/dev/null", { ignoreError: true });
+  const gwInfo = runCapture("openshell gateway info -g diffract 2>/dev/null", { ignoreError: true });
   if (hasStaleGateway(gwInfo)) {
-    console.log("  Cleaning up previous Diffraction session...");
+    console.log("  Cleaning up previous Diffract session...");
     run("openshell forward stop 18789 2>/dev/null || true", { ignoreError: true });
-    run("openshell gateway destroy -g diffraction 2>/dev/null || true", { ignoreError: true });
+    run("openshell gateway destroy -g diffract 2>/dev/null || true", { ignoreError: true });
     console.log("  ✓ Previous session cleaned up");
   }
 
   // Required ports — gateway (8080) and dashboard (18789)
   const requiredPorts = [
-    { port: 8080, label: "OpenShell gateway" },
-    { port: 18789, label: "Diffraction dashboard" },
+    { port: 8080, label: "Diffract gateway" },
+    { port: 18789, label: "Diffract dashboard" },
   ];
   for (const { port, label } of requiredPorts) {
     const portCheck = await checkPortAvailable(port);
@@ -333,7 +439,7 @@ async function preflight() {
           console.error(`       lsof -i :${port} -sTCP:LISTEN -P -n`);
         }
         console.error("       # or, if it's a systemd service:");
-        console.error("       systemctl --user stop diffraction-gateway.service");
+        console.error("       systemctl --user stop diffract-gateway.service");
       } else {
         console.error(`     Could not identify the process using port ${port}.`);
         console.error(`     Run: lsof -i :${port} -sTCP:LISTEN`);
@@ -343,6 +449,26 @@ async function preflight() {
       process.exit(1);
     }
     console.log(`  ✓ Port ${port} available (${label})`);
+  }
+
+  // Disk space (need ~5GB for container images)
+  const diskCheck = checkDiskSpace("/", 5);
+  if (!diskCheck.ok) {
+    console.error(`  !! ${diskCheck.reason}`);
+    process.exit(1);
+  }
+  if (diskCheck.availableGB !== null) {
+    console.log(`  ✓ Disk space: ${diskCheck.availableGB}GB available`);
+  }
+
+  // Memory (need ~2GB)
+  const memCheck = checkMemory(2048);
+  if (!memCheck.ok) {
+    console.error(`  !! ${memCheck.reason}`);
+    process.exit(1);
+  }
+  if (memCheck.availableMB !== null) {
+    console.log(`  ✓ Memory: ${memCheck.availableMB}MB available`);
   }
 
   // GPU
@@ -362,17 +488,17 @@ async function preflight() {
 // ── Step 2: Gateway ──────────────────────────────────────────────
 
 async function startGateway(gpu) {
-  step(2, 7, "Starting OpenShell gateway");
+  step(2, 7, "Starting Diffract gateway");
 
   // Destroy old gateway
-  run("openshell gateway destroy -g diffraction 2>/dev/null || true", { ignoreError: true });
+  run("openshell gateway destroy -g diffract 2>/dev/null || true", { ignoreError: true });
 
-  const gwArgs = ["--name", "diffraction"];
+  const gwArgs = ["--name", "diffract"];
   // Do NOT pass --gpu here. On DGX Spark (and most GPU hosts), inference is
   // routed through a host-side provider (Ollama, vLLM, or cloud API) — the
   // sandbox itself does not need direct GPU access. Passing --gpu causes
   // FailedPrecondition errors when the gateway's k3s device plugin cannot
-  // allocate GPUs. See: https://build.nvidia.com/spark/diffraction/instructions
+  // allocate GPUs. See: https://build.nvidia.com/spark/diffract/instructions
 
   run(`openshell gateway start ${gwArgs.join(" ")}`, { ignoreError: false });
 
@@ -394,7 +520,7 @@ async function startGateway(gpu) {
   const runtime = getContainerRuntime();
   if (shouldPatchCoredns(runtime)) {
     console.log("  Patching CoreDNS for Colima...");
-    run(`bash "${path.join(SCRIPTS, "fix-coredns.sh")}" diffraction 2>&1 || true`, { ignoreError: true });
+    run(`bash "${path.join(SCRIPTS, "fix-coredns.sh")}" diffract 2>&1 || true`, { ignoreError: true });
   }
   // Give DNS a moment to propagate
   sleep(5);
@@ -405,19 +531,26 @@ async function startGateway(gpu) {
 async function createSandbox(gpu) {
   step(3, 7, "Creating sandbox");
 
-  const nameAnswer = await promptOrDefault(
-    "  Sandbox name (lowercase, numbers, hyphens) [my-assistant]: ",
-    "DIFFRACTION_SANDBOX_NAME", "my-assistant"
-  );
-  const sandboxName = (nameAnswer || "my-assistant").trim().toLowerCase();
+  let sandboxName;
+  while (true) {
+    const nameAnswer = await promptOrDefault(
+      "  Sandbox name (lowercase, numbers, hyphens) [my-assistant]: ",
+      "DIFFRACTION_SANDBOX_NAME", "my-assistant"
+    );
+    sandboxName = (nameAnswer || "my-assistant").trim().toLowerCase().replace(/\s+/g, "-");
 
-  // Validate: RFC 1123 subdomain — lowercase alphanumeric and hyphens,
-  // must start and end with alphanumeric (required by Kubernetes/OpenShell)
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(sandboxName)) {
+    // Validate: RFC 1123 subdomain — lowercase alphanumeric and hyphens,
+    // must start and end with alphanumeric (required by Kubernetes/Diffract)
+    if (/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(sandboxName)) {
+      break;
+    }
     console.error(`  Invalid sandbox name: '${sandboxName}'`);
     console.error("  Names must be lowercase, contain only letters, numbers, and hyphens,");
     console.error("  and must start and end with a letter or number.");
-    process.exit(1);
+    if (isNonInteractive()) {
+      process.exit(1);
+    }
+    console.log("  Please try again.\n");
   }
 
   // Check if sandbox already exists in registry
@@ -445,16 +578,17 @@ async function createSandbox(gpu) {
   // Stage build context
   const { mkdtempSync } = require("fs");
   const os = require("os");
-  const buildCtx = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-build-"));
+  const buildCtx = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-build-"));
   fs.copyFileSync(path.join(ROOT, "Dockerfile"), path.join(buildCtx, "Dockerfile"));
-  run(`cp -r "${path.join(ROOT, "diffraction")}" "${buildCtx}/diffraction"`);
-  run(`cp -r "${path.join(ROOT, "diffraction-blueprint")}" "${buildCtx}/diffraction-blueprint"`);
-  run(`cp -r "${path.join(ROOT, "scripts")}" "${buildCtx}/scripts"`);
-  run(`rm -rf "${buildCtx}/diffraction/node_modules" "${buildCtx}/diffraction/src"`, { ignoreError: true });
+  run(`cp -r "${path.join(PROJECT_ROOT, "plugins", "diffract-core")}" "${buildCtx}/diffract"`);
+  run(`cp -r "${path.join(PROJECT_ROOT, "policies")}" "${buildCtx}/policies"`);
+  run(`cp -r "${path.join(PROJECT_ROOT, "blueprints")}" "${buildCtx}/blueprints"`);
+  run(`cp -r "${path.join(PROJECT_ROOT, "scripts")}" "${buildCtx}/scripts"`);
+  run(`rm -rf "${buildCtx}/diffract/node_modules" "${buildCtx}/diffract/src"`, { ignoreError: true });
 
   // Create sandbox (use -- echo to avoid dropping into interactive shell)
   // Pass the base policy so sandbox starts in proxy mode (required for policy updates later)
-  const basePolicyPath = path.join(ROOT, "diffraction-blueprint", "policies", "diffraction-sandbox.yaml");
+  const basePolicyPath = path.join(PROJECT_ROOT, "policies", "base.yaml");
   const createArgs = [
     `--from "${buildCtx}/Dockerfile"`,
     `--name "${sandboxName}"`,
@@ -462,19 +596,31 @@ async function createSandbox(gpu) {
   ];
   // --gpu is intentionally omitted. See comment in startGateway().
 
-  console.log(`  Creating sandbox '${sandboxName}' (this takes a few minutes on first run)...`);
+  // Inject CHAT_UI_URL into Dockerfile as a build arg so allowedOrigins is
+  // baked into the immutable config at build time (no runtime patching needed).
   const chatUiUrl = process.env.CHAT_UI_URL || 'http://127.0.0.1:18789';
+  if (chatUiUrl !== 'http://127.0.0.1:18789') {
+    const dockerfilePath = path.join(buildCtx, "Dockerfile");
+    let df = fs.readFileSync(dockerfilePath, "utf-8");
+    df = df.replace(
+      /^ARG CHAT_UI_URL=.*/m,
+      `ARG CHAT_UI_URL=${chatUiUrl}`
+    );
+    fs.writeFileSync(dockerfilePath, df);
+  }
+
+  console.log(`  Creating sandbox '${sandboxName}' (this takes a few minutes on first run)...`);
   const envArgs = [`CHAT_UI_URL=${chatUiUrl}`];
   if (process.env.NVIDIA_API_KEY) {
     envArgs.push(`NVIDIA_API_KEY=${process.env.NVIDIA_API_KEY}`);
   }
 
   // Run without piping through awk — the pipe masked non-zero exit codes
-  // from openshell because bash returns the status of the last pipeline
+  // from diffract because bash returns the status of the last pipeline
   // command (awk, always 0) unless pipefail is set. Removing the pipe
   // lets the real exit code flow through to run().
   const createResult = run(
-    `openshell sandbox create ${createArgs.join(" ")} -- env ${envArgs.join(" ")} diffraction 2>&1`,
+    `openshell sandbox create ${createArgs.join(" ")} -- env ${envArgs.join(" ")} diffract 2>&1`,
     { ignoreError: true }
   );
 
@@ -485,13 +631,13 @@ async function createSandbox(gpu) {
     console.error("");
     console.error(`  Sandbox creation failed (exit ${createResult.status}).`);
     console.error("  Try:  openshell sandbox list        # check gateway state");
-    console.error("  Try:  diffraction onboard              # retry from scratch");
+    console.error("  Try:  diffract onboard              # retry from scratch");
     process.exit(createResult.status || 1);
   }
 
   // Wait for sandbox to reach Ready state in k3s before registering.
   // On WSL2 + Docker Desktop the pod can take longer to initialize;
-  // without this gate, Diffraction registers a phantom sandbox that
+  // without this gate, Diffract registers a phantom sandbox that
   // causes "sandbox not found" on every subsequent connect/status call.
   console.log("  Waiting for sandbox to become ready...");
   let ready = false;
@@ -516,9 +662,14 @@ async function createSandbox(gpu) {
       console.error(`  Could not remove the orphaned sandbox. Manual cleanup:`);
       console.error(`    openshell sandbox delete "${sandboxName}"`);
     }
-    console.error("  Retry: diffraction onboard");
+    console.error("  Retry: diffract onboard");
     process.exit(1);
   }
+
+  // Set up DNS proxy so inference.local resolves inside the sandbox namespace.
+  // Without this, the L7 proxy at 10.200.0.1:3128 is unreachable by DNS.
+  run(`bash "${path.join(SCRIPTS, "fix-coredns.sh")}" diffract 2>&1 || true`, { ignoreError: true });
+  run(`bash "${path.join(SCRIPTS, "setup-dns-proxy.sh")}" diffract "${sandboxName}" 2>&1 || true`, { ignoreError: true });
 
   // Release any stale forward on port 18789 before claiming it for the new sandbox.
   // A previous onboard run may have left the port forwarded to a different sandbox,
@@ -560,7 +711,7 @@ async function setupNim(sandboxName, gpu) {
   options.push({
     key: "cloud",
     label:
-      "Diffraction Cloud (NVIDIA-powered, build.nvidia.com)" +
+      "Diffract Cloud (NVIDIA-powered, build.nvidia.com)" +
       (!ollamaRunning && !(EXPERIMENTAL && vllmRunning) ? " (recommended)" : ""),
   });
   if (hasOllama || ollamaRunning) {
@@ -703,7 +854,7 @@ async function setupNim(sandboxName, gpu) {
       // In non-interactive mode, NVIDIA_API_KEY must be set via env var
       if (!process.env.NVIDIA_API_KEY) {
         console.error("  NVIDIA_API_KEY is required for cloud inference in non-interactive mode.");
-        console.error("  Set it via: NVIDIA_API_KEY=nvapi-... diffraction onboard --non-interactive");
+        console.error("  Set it via: NVIDIA_API_KEY=nvapi-... diffract onboard --non-interactive");
         process.exit(1);
       }
     } else {
@@ -711,7 +862,7 @@ async function setupNim(sandboxName, gpu) {
       model = model || (await promptCloudModel()) || DEFAULT_CLOUD_MODEL;
     }
     model = model || requestedModel || DEFAULT_CLOUD_MODEL;
-    console.log(`  Using Diffraction Cloud inference with model: ${model}`);
+    console.log(`  Using Diffract Cloud inference with model: ${model}`);
   }
 
   registry.updateSandbox(sandboxName, { model, provider, nimContainer });
@@ -759,7 +910,7 @@ async function setupInference(sandboxName, model, provider) {
     const validation = validateLocalProvider(provider, runCapture);
     if (!validation.ok) {
       console.error(`  ${validation.message}`);
-      console.error("  On macOS, local inference also depends on OpenShell host routing support.");
+      console.error("  On macOS, local inference also depends on Diffract host routing support.");
       process.exit(1);
     }
     const baseUrl = getLocalProviderBaseUrl(provider);
@@ -788,10 +939,10 @@ async function setupInference(sandboxName, model, provider) {
   console.log(`  ✓ Inference route set: ${provider} / ${model}`);
 }
 
-// ── Step 6: Diffraction ─────────────────────────────────────────────
+// ── Step 6: Diffract ─────────────────────────────────────────────
 
 async function setupOpenclaw(sandboxName, model, provider) {
-  step(6, 7, "Setting up Diffraction inside sandbox");
+  step(6, 7, "Setting up Diffract inside sandbox");
 
   const selectionConfig = getProviderSelectionConfig(provider, model);
   if (selectionConfig) {
@@ -805,7 +956,7 @@ ${script}
 EOF_DIFFRACTION_SYNC`, { stdio: ["ignore", "ignore", "inherit"] });
   }
 
-  console.log("  ✓ Diffraction gateway launched inside sandbox");
+  console.log("  ✓ Diffract gateway launched inside sandbox");
 }
 
 // ── Step 7: Policy presets ───────────────────────────────────────
@@ -926,7 +1077,7 @@ function printDashboard(sandboxName, model, provider) {
   const nimLabel = nimStat.running ? "running" : "not running";
 
   let providerLabel = provider;
-  if (provider === "nvidia-nim") providerLabel = "Diffraction Cloud (NVIDIA)";
+  if (provider === "nvidia-nim") providerLabel = "Diffract Cloud (NVIDIA)";
   else if (provider === "vllm-local") providerLabel = "Local vLLM";
   else if (provider === "ollama-local") providerLabel = "Local Ollama";
 
@@ -937,9 +1088,9 @@ function printDashboard(sandboxName, model, provider) {
   console.log(`  Model        ${model} (${providerLabel})`);
   console.log(`  Inference     ${nimStat.running ? "NIM container running" : providerLabel}`);
   console.log(`  ${"─".repeat(50)}`);
-  console.log(`  Run:         diffraction ${sandboxName} connect`);
-  console.log(`  Status:      diffraction ${sandboxName} status`);
-  console.log(`  Logs:        diffraction ${sandboxName} logs --follow`);
+  console.log(`  Run:         diffract ${sandboxName} connect`);
+  console.log(`  Status:      diffract ${sandboxName} status`);
+  console.log(`  Logs:        diffract ${sandboxName} logs --follow`);
   console.log(`  ${"─".repeat(50)}`);
   console.log("");
 }
@@ -949,19 +1100,119 @@ function printDashboard(sandboxName, model, provider) {
 async function onboard(opts = {}) {
   NON_INTERACTIVE = opts.nonInteractive || process.env.DIFFRACTION_NON_INTERACTIVE === "1";
 
+  // Acquire onboard lock (prevents concurrent onboard runs)
+  const lock = session.acquireOnboardLock("diffract onboard");
+  if (!lock.acquired) {
+    console.error("");
+    console.error(`  Another onboard process is already running (PID ${lock.holderPid || "unknown"}).`);
+    console.error(`  If this is stale, remove: ${lock.lockFile}`);
+    process.exit(1);
+  }
+  // Release lock on exit
+  process.on("exit", () => session.releaseOnboardLock());
+  process.on("SIGINT", () => { session.releaseOnboardLock(); process.exit(130); });
+  process.on("SIGTERM", () => { session.releaseOnboardLock(); process.exit(143); });
+
+  // Check for resumable session
+  const existing = session.loadSession();
+  if (existing && existing.resumable && existing.status !== "complete") {
+    const lastStep = existing.lastCompletedStep;
+    console.log("");
+    console.log(`  Resuming previous onboard session (last completed: ${lastStep || "none"})`);
+  }
+
+  // Create or resume session
+  const sess = existing && existing.resumable ? existing : session.createSession({
+    mode: isNonInteractive() ? "non-interactive" : "interactive",
+    metadata: { gatewayName: "diffract" },
+  });
+  session.saveSession(sess);
+
   console.log("");
-  console.log("  Diffraction — Enterprise AI Agent Setup");
-  console.log("  Powered by OpenShell (sandbox) + OpenClaw (agent)");
+  console.log("  Diffract — Enterprise AI Agent Setup");
+  console.log("  Powered by Diffract (sandbox) + Diffract Agent (agent)");
   if (isNonInteractive()) console.log("  (non-interactive mode)");
   console.log("  " + "═".repeat(47));
 
-  const gpu = await preflight();
-  await startGateway(gpu);
-  const sandboxName = await createSandbox(gpu);
-  const { model, provider } = await setupNim(sandboxName, gpu);
-  await setupInference(sandboxName, model, provider);
-  await setupOpenclaw(sandboxName, model, provider);
-  await setupPolicies(sandboxName);
+  // Step tracking helper
+  const shouldSkip = (stepName) => {
+    const step = sess.steps[stepName];
+    return step && step.status === "complete";
+  };
+
+  let gpu;
+  if (!shouldSkip("preflight")) {
+    session.markStepStarted("preflight");
+    try { gpu = await preflight(); session.markStepComplete("preflight"); }
+    catch (e) { session.markStepFailed("preflight", e.message); throw e; }
+  } else {
+    console.log("  ✓ Preflight (skipped — already complete)");
+    gpu = nim.detectGpu();
+  }
+
+  if (!shouldSkip("gateway")) {
+    session.markStepStarted("gateway");
+    try { await startGateway(gpu); session.markStepComplete("gateway"); }
+    catch (e) { session.markStepFailed("gateway", e.message); throw e; }
+  } else {
+    console.log("  ✓ Gateway (skipped — already complete)");
+  }
+
+  let sandboxName;
+  if (!shouldSkip("sandbox")) {
+    session.markStepStarted("sandbox");
+    try {
+      sandboxName = await createSandbox(gpu);
+      session.markStepComplete("sandbox", { sandboxName });
+    } catch (e) { session.markStepFailed("sandbox", e.message); throw e; }
+  } else {
+    sandboxName = sess.sandboxName || "my-assistant";
+    console.log(`  ✓ Sandbox '${sandboxName}' (skipped — already complete)`);
+  }
+
+  let model, provider;
+  if (!shouldSkip("provider_selection")) {
+    session.markStepStarted("provider_selection");
+    try {
+      ({ model, provider } = await setupNim(sandboxName, gpu));
+      session.markStepComplete("provider_selection", { model, provider });
+    } catch (e) { session.markStepFailed("provider_selection", e.message); throw e; }
+  } else {
+    model = sess.model; provider = sess.provider;
+    console.log(`  ✓ Provider selection (skipped — already complete)`);
+  }
+
+  if (!shouldSkip("inference")) {
+    session.markStepStarted("inference");
+    try {
+      await setupInference(sandboxName, model, provider);
+      session.markStepComplete("inference");
+    } catch (e) { session.markStepFailed("inference", e.message); throw e; }
+  } else {
+    console.log("  ✓ Inference (skipped — already complete)");
+  }
+
+  if (!shouldSkip("openclaw")) {
+    session.markStepStarted("openclaw");
+    try {
+      await setupOpenclaw(sandboxName, model, provider);
+      session.markStepComplete("openclaw");
+    } catch (e) { session.markStepFailed("openclaw", e.message); throw e; }
+  } else {
+    console.log("  ✓ OpenClaw config (skipped — already complete)");
+  }
+
+  if (!shouldSkip("policies")) {
+    session.markStepStarted("policies");
+    try {
+      await setupPolicies(sandboxName);
+      session.markStepComplete("policies");
+    } catch (e) { session.markStepFailed("policies", e.message); throw e; }
+  } else {
+    console.log("  ✓ Policies (skipped — already complete)");
+  }
+
+  session.completeSession({ sandboxName, model, provider });
   printDashboard(sandboxName, model, provider);
 }
 

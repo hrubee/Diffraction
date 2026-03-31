@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Preflight checks for Diffraction onboarding.
+// Preflight checks for Diffract onboarding.
 
 const net = require("net");
 const { runCapture } = require("./runner");
@@ -88,4 +88,74 @@ async function checkPortAvailable(port, opts) {
   });
 }
 
-module.exports = { checkPortAvailable };
+/**
+ * Check available disk space on a given path.
+ * Returns { ok, availableGB, requiredGB, reason? }
+ */
+function checkDiskSpace(targetPath, requiredGB) {
+  const req = requiredGB || 5;
+  try {
+    const out = runCapture(`df -BG "${targetPath || "/"}" 2>/dev/null | tail -1`);
+    // Format: Filesystem 1G-blocks Used Available Use% Mounted
+    const parts = out.trim().split(/\s+/);
+    const availStr = parts[3]; // e.g. "12G"
+    if (availStr) {
+      const availableGB = parseInt(availStr.replace(/G$/i, ""), 10);
+      if (!isNaN(availableGB)) {
+        if (availableGB >= req) {
+          return { ok: true, availableGB, requiredGB: req };
+        }
+        return {
+          ok: false,
+          availableGB,
+          requiredGB: req,
+          reason: `Only ${availableGB}GB free (need ${req}GB for container images)`,
+        };
+      }
+    }
+  } catch {}
+  // Can't determine — don't block
+  return { ok: true, availableGB: null, requiredGB: req };
+}
+
+/**
+ * Check available system memory.
+ * Returns { ok, availableMB, requiredMB, reason? }
+ */
+function checkMemory(requiredMB) {
+  const req = requiredMB || 2048;
+  try {
+    // Linux: /proc/meminfo
+    const fs = require("fs");
+    if (fs.existsSync("/proc/meminfo")) {
+      const meminfo = fs.readFileSync("/proc/meminfo", "utf-8");
+      const match = meminfo.match(/MemAvailable:\s+(\d+)\s+kB/);
+      if (match) {
+        const availableMB = Math.floor(parseInt(match[1], 10) / 1024);
+        if (availableMB >= req) {
+          return { ok: true, availableMB, requiredMB: req };
+        }
+        return {
+          ok: false,
+          availableMB,
+          requiredMB: req,
+          reason: `Only ${availableMB}MB free memory (need ${req}MB)`,
+        };
+      }
+    }
+    // macOS fallback
+    const out = runCapture("sysctl -n hw.memsize 2>/dev/null");
+    if (out) {
+      const totalMB = Math.floor(parseInt(out.trim(), 10) / 1024 / 1024);
+      // Can't easily get "available" on macOS; check total is reasonable
+      if (totalMB >= req) {
+        return { ok: true, availableMB: totalMB, requiredMB: req };
+      }
+      return { ok: false, availableMB: totalMB, requiredMB: req, reason: `System has ${totalMB}MB total memory (need ${req}MB)` };
+    }
+  } catch {}
+  // Can't determine — don't block
+  return { ok: true, availableMB: null, requiredMB: req };
+}
+
+module.exports = { checkPortAvailable, checkDiskSpace, checkMemory };

@@ -6,7 +6,7 @@ const path = require("path");
 const readline = require("readline");
 const { execSync } = require("child_process");
 
-const CREDS_DIR = path.join(process.env.HOME || "/tmp", ".diffraction");
+const CREDS_DIR = path.join(process.env.HOME || "/tmp", ".diffract");
 const CREDS_FILE = path.join(CREDS_DIR, "credentials.json");
 
 function loadCredentials() {
@@ -77,7 +77,7 @@ async function ensureApiKey() {
   saveCredential("NVIDIA_API_KEY", key);
   process.env.NVIDIA_API_KEY = key;
   console.log("");
-  console.log("  Key saved to ~/.diffraction/credentials.json (mode 600)");
+  console.log("  Key saved to ~/.diffract/credentials.json (mode 600)");
   console.log("");
 }
 
@@ -124,7 +124,7 @@ async function ensureGithubToken() {
   saveCredential("GITHUB_TOKEN", token);
   process.env.GITHUB_TOKEN = token;
   console.log("");
-  console.log("  Token saved to ~/.diffraction/credentials.json (mode 600)");
+  console.log("  Token saved to ~/.diffract/credentials.json (mode 600)");
   console.log("");
 }
 

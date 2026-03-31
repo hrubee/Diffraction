@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Multi-sandbox registry at ~/.diffraction/sandboxes.json
+// Multi-sandbox registry at ~/.diffract/sandboxes.json
 
 const fs = require("fs");
 const path = require("path");
 
-const REGISTRY_FILE = path.join(process.env.HOME || "/tmp", ".diffraction", "sandboxes.json");
+const REGISTRY_FILE = path.join(process.env.HOME || "/tmp", ".diffract", "sandboxes.json");
 
 function load() {
   try {
@@ -20,7 +20,10 @@ function load() {
 function save(data) {
   const dir = path.dirname(REGISTRY_FILE);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(REGISTRY_FILE, JSON.stringify(data, null, 2), { mode: 0o600 });
+  // Atomic write: write to temp file then rename to prevent corruption on crash
+  const tmp = REGISTRY_FILE + `.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, REGISTRY_FILE);
 }
 
 function getSandbox(name) {

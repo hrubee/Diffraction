@@ -1,0 +1,135 @@
+{
+  "_comment": "Diffract model registry — add custom models here or via 'diffract model add'",
+  "version": 1,
+  "defaults": {
+    "cloud": "nvidia/nemotron-3-super-120b-a12b",
+    "local": "qwen2.5-coder:7b"
+  },
+  "providers": {
+    "nvidia": {
+      "type": "nvidia",
+      "label": "Diffract Cloud (NVIDIA)",
+      "credentialEnv": "NVIDIA_API_KEY",
+      "credentialPrefix": "nvapi-",
+      "endpoint": "https://integrate.api.nvidia.com/v1",
+      "skipVerify": false
+    },
+    "openai": {
+      "type": "openai",
+      "label": "OpenAI",
+      "credentialEnv": "OPENAI_API_KEY",
+      "credentialPrefix": "sk-",
+      "endpoint": "https://api.openai.com/v1",
+      "skipVerify": true
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "label": "Anthropic",
+      "credentialEnv": "ANTHROPIC_API_KEY",
+      "credentialPrefix": "sk-ant-",
+      "endpoint": "https://api.anthropic.com/v1",
+      "skipVerify": false
+    }
+  },
+  "models": [
+    {
+      "id": "nvidia/nemotron-3-super-120b-a12b",
+      "name": "Nemotron 3 Super 120B",
+      "provider": "nvidia",
+      "api": "openai-completions",
+      "contextWindow": 131072,
+      "maxTokens": 4096,
+      "reasoning": false
+    },
+    {
+      "id": "moonshotai/kimi-k2.5",
+      "name": "Kimi K2.5",
+      "provider": "nvidia",
+      "api": "openai-completions",
+      "contextWindow": 131072,
+      "maxTokens": 4096,
+      "reasoning": true
+    },
+    {
+      "id": "z-ai/glm5",
+      "name": "GLM-5",
+      "provider": "nvidia",
+      "api": "openai-completions",
+      "contextWindow": 131072,
+      "maxTokens": 4096,
+      "reasoning": false
+    },
+    {
+      "id": "minimaxai/minimax-m2.5",
+      "name": "MiniMax M2.5",
+      "provider": "nvidia",
+      "api": "openai-completions",
+      "contextWindow": 131072,
+      "maxTokens": 4096,
+      "reasoning": false
+    },
+    {
+      "id": "qwen/qwen3.5-397b-a17b",
+      "name": "Qwen 3.5 397B",
+      "provider": "nvidia",
+      "api": "openai-completions",
+      "contextWindow": 131072,
+      "maxTokens": 4096,
+      "reasoning": false
+    },
+    {
+      "id": "openai/gpt-oss-120b",
+      "name": "GPT-OSS 120B",
+      "provider": "nvidia",
+      "api": "openai-completions",
+      "contextWindow": 131072,
+      "maxTokens": 4096,
+      "reasoning": false
+    },
+    {
+      "id": "meta/llama-4-maverick-17b-128e-instruct",
+      "name": "Llama 4 Maverick 17B",
+      "provider": "nvidia",
+      "api": "openai-completions",
+      "contextWindow": 131072,
+      "maxTokens": 4096,
+      "reasoning": false
+    },
+    {
+      "id": "deepseek-ai/deepseek-v3.2",
+      "name": "DeepSeek V3.2",
+      "provider": "nvidia",
+      "api": "openai-completions",
+      "contextWindow": 131072,
+      "maxTokens": 4096,
+      "reasoning": false
+    },
+    {
+      "id": "mistralai/mistral-large-3-675b-instruct-2512",
+      "name": "Mistral Large 3 675B",
+      "provider": "nvidia",
+      "api": "openai-completions",
+      "contextWindow": 131072,
+      "maxTokens": 4096,
+      "reasoning": false
+    },
+    {
+      "id": "gpt-4.1",
+      "name": "GPT-4.1",
+      "provider": "openai",
+      "api": "openai-completions",
+      "contextWindow": 1047576,
+      "maxTokens": 32768,
+      "reasoning": false
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "name": "Claude Sonnet 4.6",
+      "provider": "anthropic",
+      "api": "anthropic-messages",
+      "contextWindow": 200000,
+      "maxTokens": 8192,
+      "reasoning": false
+    }
+  ]
+}

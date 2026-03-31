@@ -56,7 +56,7 @@ function getProviderSelectionConfig(provider, model) {
   }
 }
 
-function getDiffractionPrimaryModel(provider, model) {
+function getDiffractPrimaryModel(provider, model) {
   const resolvedModel =
     model || (provider === "ollama-local" ? DEFAULT_OLLAMA_MODEL : DEFAULT_CLOUD_MODEL);
   return resolvedModel ? `${MANAGED_PROVIDER_ID}/${resolvedModel}` : null;
@@ -70,6 +70,6 @@ module.exports = {
   DEFAULT_ROUTE_PROFILE,
   INFERENCE_ROUTE_URL,
   MANAGED_PROVIDER_ID,
-  getDiffractionPrimaryModel,
+  getDiffractPrimaryModel,
   getProviderSelectionConfig,
 };
