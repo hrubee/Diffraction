@@ -23,7 +23,7 @@ const policies = require("./lib/policies");
 const GLOBAL_COMMANDS = new Set([
   "onboard", "list", "deploy", "setup", "setup-spark",
   "start", "stop", "status", "uninstall",
-  "model", "hub", "doctor",
+  "model", "hub", "doctor", "switch",
   "help", "--help", "-h",
 ]);
 
@@ -511,6 +511,57 @@ function handleHub(args) {
   }
 }
 
+// ── Switch model ────────────────────────────────────────────────
+
+async function switchModel(args) {
+  const modelRegistry = require("./lib/model-registry");
+  const modelId = args[0];
+
+  if (!modelId) {
+    // Interactive: show numbered list
+    const models = modelRegistry.getCloudModels();
+    const reg = modelRegistry.loadRegistry();
+    console.log("");
+    console.log("  Select a model to switch to:");
+    models.forEach((m, i) => {
+      const label = reg.providers[m.provider]?.label || m.provider;
+      const r = m.reasoning ? " [reasoning]" : "";
+      console.log(`    ${i + 1}) ${m.id}  (${label})${r}`);
+    });
+    console.log("");
+
+    const { prompt: askPrompt } = require("./lib/credentials");
+    const choice = await askPrompt(`  Choose model [1-${models.length}]: `);
+    const index = parseInt(choice || "1", 10) - 1;
+    const selected = models[index] || models[0];
+
+    const provider = reg.providers[selected.provider];
+    if (!provider) {
+      console.error(`  Provider '${selected.provider}' not found in registry`);
+      process.exit(1);
+    }
+
+    console.log(`  Switching to ${selected.id} (${provider.label})...`);
+    const verifyFlag = provider.skipVerify ? " --no-verify" : "";
+    run(`openshell inference set --provider nvidia-nim --model ${selected.id}${verifyFlag}`);
+    console.log(`  ✓ Active model: ${selected.id}`);
+    return;
+  }
+
+  // Direct: use provided model ID
+  const model = modelRegistry.getModel(modelId);
+  if (!model) {
+    console.error(`  Model '${modelId}' not found. Run 'diffract model list' to see options.`);
+    process.exit(1);
+  }
+
+  const reg = modelRegistry.loadRegistry();
+  const provider = reg.providers[model.provider];
+  const verifyFlag = provider?.skipVerify ? " --no-verify" : "";
+  run(`openshell inference set --provider nvidia-nim --model ${modelId}${verifyFlag}`);
+  console.log(`  ✓ Active model: ${modelId}`);
+}
+
 // ── Doctor ───────────────────────────────────────────────────────
 
 function runDoctor() {
@@ -676,6 +727,7 @@ function help() {
     diffract model list              List all available models
     diffract model add <id> [prov]   Add a custom model
     diffract model remove <id>       Remove a user-added model
+    diffract switch [model-id]       Switch active inference model
 
   Skills Hub:
     diffract hub list                List installed skills
@@ -730,6 +782,7 @@ const [cmd, ...args] = process.argv.slice(2);
       case "model":       handleModel(args); break;
       case "hub":         handleHub(args); break;
       case "doctor":      runDoctor(); break;
+      case "switch":      switchModel(args); break;
       default:            help(); break;
     }
     return;
