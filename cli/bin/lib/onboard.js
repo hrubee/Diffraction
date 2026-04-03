@@ -355,7 +355,7 @@ function getNonInteractiveModel(providerKey) {
 // ── Step 1: Preflight ────────────────────────────────────────────
 
 async function preflight() {
-  step(1, 7, "Preflight checks");
+  step(1, 8, "Preflight checks");
 
   // Docker — auto-install if missing, auto-start if not running
   if (!isDockerInstalled()) {
@@ -488,7 +488,7 @@ async function preflight() {
 // ── Step 2: Gateway ──────────────────────────────────────────────
 
 async function startGateway(gpu) {
-  step(2, 7, "Starting Diffract gateway");
+  step(2, 8, "Starting Diffract gateway");
 
   // Destroy old gateway
   run("openshell gateway destroy -g diffract 2>/dev/null || true", { ignoreError: true });
@@ -529,7 +529,7 @@ async function startGateway(gpu) {
 // ── Step 3: Sandbox ──────────────────────────────────────────────
 
 async function createSandbox(gpu) {
-  step(3, 7, "Creating sandbox");
+  step(3, 8, "Creating sandbox");
 
   let sandboxName;
   while (true) {
@@ -688,10 +688,89 @@ async function createSandbox(gpu) {
   return sandboxName;
 }
 
-// ── Step 4: NIM ──────────────────────────────────────────────────
+// ── Step 3.5: Browser install ────────────────────────────────────
+
+async function installBrowser(sandboxName) {
+  step(4, 8, "Installing browser in sandbox");
+
+  const exec = `openshell doctor exec -- kubectl exec -n openshell ${sandboxName} --`;
+
+  try {
+    // 1. Install Playwright + Chromium headless shell (real binary, not Ubuntu snap stub)
+    console.log("  Installing Chromium via Playwright (this may take a minute)...");
+    runCapture(`${exec} npx --yes playwright install chromium 2>&1`, { ignoreError: false });
+
+    // 2. Install system dependencies (libgbm, xvfb, fonts, etc.)
+    console.log("  Installing browser system dependencies...");
+    runCapture(`${exec} npx playwright install-deps chromium 2>&1`, { ignoreError: false });
+
+    // 3. Copy headless shell to an accessible location (/opt/chromium-headless)
+    //    Playwright installs to /root/.cache which the sandbox user can't access (drwx------).
+    console.log("  Setting up browser for sandbox user...");
+    const findResult = runCapture(
+      `${exec} find /root/.cache/ms-playwright -name "chrome-headless-shell" -type f 2>/dev/null`,
+      { ignoreError: true }
+    );
+    const headlessPath = (findResult || "").trim().split("\n")[0];
+    if (!headlessPath) {
+      // Fallback: try full chromium
+      const chromePath = runCapture(
+        `${exec} find /root/.cache/ms-playwright -name "chrome" -type f -not -path "*/headless*" 2>/dev/null`,
+        { ignoreError: true }
+      );
+      if (chromePath && chromePath.trim()) {
+        const chromeDir = path.dirname(chromePath.trim().split("\n")[0]);
+        runCapture(`${exec} bash -c "cp -r ${chromeDir} /opt/chromium && chmod -R 755 /opt/chromium"`, { ignoreError: false });
+        configureBrowser(sandboxName, exec, "/opt/chromium/chrome");
+      } else {
+        console.error("  WARNING: Could not find Chromium binary after install");
+      }
+    } else {
+      const shellDir = path.dirname(headlessPath);
+      runCapture(`${exec} bash -c "cp -r ${shellDir} /opt/chromium-headless && chmod -R 755 /opt/chromium-headless"`, { ignoreError: false });
+      configureBrowser(sandboxName, exec, "/opt/chromium-headless/chrome-headless-shell");
+    }
+
+    console.log("  ✓ Chromium browser installed and configured");
+  } catch (err) {
+    // Non-fatal — sandbox works fine without a browser
+    console.error(`  WARNING: Browser install failed: ${err.message}`);
+    console.error("  The sandbox will work without a browser. You can install manually later:");
+    console.error(`    ${exec} npx playwright install chromium`);
+    console.error(`    ${exec} npx playwright install-deps chromium`);
+  }
+}
+
+/**
+ * Configure OpenClaw to use the installed browser.
+ * Sets browser.enabled, browser.executablePath, browser.noSandbox, browser.headless
+ * in openclaw.json, updates the integrity hash, and fixes permissions.
+ */
+function configureBrowser(sandboxName, exec, browserPath) {
+  // Update openclaw.json with browser config
+  const configScript = `
+import json
+f = "/sandbox/.openclaw/openclaw.json"
+d = json.load(open(f))
+d["browser"] = {"enabled": True, "executablePath": "${browserPath}", "noSandbox": True, "headless": True}
+json.dump(d, open(f, "w"), indent=2)
+print("configured")
+`.trim();
+  runCapture(`${exec} python3 -c '${configScript}' 2>&1`, { ignoreError: false });
+
+  // Update integrity hash so the gateway accepts the modified config
+  runCapture(`${exec} bash -c "sha256sum /sandbox/.openclaw/openclaw.json > /sandbox/.openclaw/.config-hash"`, { ignoreError: true });
+
+  // Fix permissions so the sandbox user (who runs the gateway) can write to .openclaw/
+  runCapture(`${exec} bash -c "chown -R sandbox:sandbox /sandbox/.openclaw/ && chmod -R 755 /sandbox/.openclaw/"`, { ignoreError: true });
+
+  console.log(`  Browser path: ${browserPath}`);
+}
+
+// ── Step 5: NIM ──────────────────────────────────────────────────
 
 async function setupNim(sandboxName, gpu) {
-  step(4, 7, "Configuring AI inference");
+  step(5, 8, "Configuring AI inference");
 
   let model = null;
   let provider = "nvidia-nim";
@@ -873,7 +952,7 @@ async function setupNim(sandboxName, gpu) {
 // ── Step 5: Inference provider ───────────────────────────────────
 
 async function setupInference(sandboxName, model, provider) {
-  step(5, 7, "Setting up inference provider");
+  step(6, 8, "Setting up inference provider");
 
   if (provider === "nvidia-nim") {
     // Create nvidia-nim provider
@@ -942,7 +1021,7 @@ async function setupInference(sandboxName, model, provider) {
 // ── Step 6: Diffract ─────────────────────────────────────────────
 
 async function setupOpenclaw(sandboxName, model, provider) {
-  step(6, 7, "Setting up Diffract inside sandbox");
+  step(7, 8, "Setting up Diffract inside sandbox");
 
   const selectionConfig = getProviderSelectionConfig(provider, model);
   if (selectionConfig) {
@@ -956,13 +1035,38 @@ ${script}
 EOF_DIFFRACTION_SYNC`, { stdio: ["ignore", "ignore", "inherit"] });
   }
 
-  console.log("  ✓ Diffract gateway launched inside sandbox");
+  console.log("  ✓ Diffract config synced to sandbox");
+
+  // Start the OpenClaw gateway inside the sandbox
+  // Use /usr/local/bin/diffract (the renamed openclaw binary) directly — npx would
+  // try to download from npm which is blocked before policy presets are applied.
+  console.log("  Starting OpenClaw gateway inside sandbox...");
+  const startGwScript = `export HOME=/sandbox && nohup /usr/local/bin/diffract gateway run --bind loopback --port 18789 > /tmp/gw.log 2>&1 &`;
+  run(`echo '${startGwScript}' | openshell sandbox connect "${sandboxName}"`, { stdio: ["ignore", "ignore", "inherit"] });
+
+  // Wait for gateway to become healthy
+  let healthy = false;
+  for (let i = 0; i < 15; i++) {
+    const check = runCapture("curl -sf http://127.0.0.1:18789/health 2>/dev/null", { ignoreError: true });
+    if (check && check.includes("ok")) {
+      healthy = true;
+      break;
+    }
+    run("sleep 2", { stdio: "ignore" });
+  }
+
+  if (healthy) {
+    console.log("  ✓ OpenClaw gateway running on :18789");
+  } else {
+    console.error("  WARNING: OpenClaw gateway did not become healthy within 30s");
+    console.error("  You may need to start it manually: diffract " + sandboxName + " connect");
+  }
 }
 
 // ── Step 7: Policy presets ───────────────────────────────────────
 
 async function setupPolicies(sandboxName) {
-  step(7, 7, "Policy presets");
+  step(8, 8, "Policy presets");
 
   const suggestions = ["pypi", "npm"];
 
@@ -1170,6 +1274,16 @@ async function onboard(opts = {}) {
     console.log(`  ✓ Sandbox '${sandboxName}' (skipped — already complete)`);
   }
 
+  if (!shouldSkip("browser")) {
+    session.markStepStarted("browser");
+    try {
+      await installBrowser(sandboxName);
+      session.markStepComplete("browser");
+    } catch (e) { session.markStepFailed("browser", e.message); /* non-fatal */ }
+  } else {
+    console.log("  ✓ Browser (skipped — already complete)");
+  }
+
   let model, provider;
   if (!shouldSkip("provider_selection")) {
     session.markStepStarted("provider_selection");
@@ -1211,6 +1325,32 @@ async function onboard(opts = {}) {
   } else {
     console.log("  ✓ Policies (skipped — already complete)");
   }
+
+  // Save baseline policy rules to registry so the dashboard knows which rules are system-level.
+  // This runs after policies are applied, capturing all onboard-created rules.
+  try {
+    const policyOutput = runCapture(
+      `openshell sandbox get "${sandboxName}" 2>/dev/null`,
+      { ignoreError: true }
+    );
+    // Parse the sandbox spec to extract policy rule names (best-effort)
+    if (policyOutput) {
+      const ruleNames = [];
+      const ruleMatch = policyOutput.match(/"network_policies"\s*:\s*\{([^}]*(?:\{[^}]*\})*[^}]*)\}/);
+      if (ruleMatch) {
+        const keyMatches = ruleMatch[0].matchAll(/"([a-z_]+)"\s*:\s*\{/g);
+        for (const m of keyMatches) {
+          if (m[1] !== "network_policies" && m[1] !== "endpoints" && m[1] !== "rules" && m[1] !== "binaries") {
+            ruleNames.push(m[1]);
+          }
+        }
+      }
+      if (ruleNames.length > 0) {
+        registry.updateSandbox(sandboxName, { baselinePolicies: ruleNames });
+        console.log(`  Baseline policies saved: ${ruleNames.join(", ")}`);
+      }
+    }
+  } catch { /* non-fatal */ }
 
   session.completeSession({ sandboxName, model, provider });
   printDashboard(sandboxName, model, provider);

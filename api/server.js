@@ -1,0 +1,52 @@
+// Diffract REST API Bridge
+// Wraps the OpenShell gRPC gateway into HTTP endpoints for the web dashboard.
+
+import express from "express";
+import cors from "cors";
+import healthRoutes from "./routes/health.js";
+import sandboxRoutes from "./routes/sandboxes.js";
+import logRoutes from "./routes/logs.js";
+import providerRoutes from "./routes/providers.js";
+import draftPolicyRoutes from "./routes/draft-policy.js";
+import configRoutes from "./routes/config.js";
+import modelRoutes from "./routes/models.js";
+import tokenRoutes from "./routes/token.js";
+import activePolicyRoutes from "./routes/active-policy.js";
+import gatewayRoutes from "./routes/gateway-routes.js";
+import channelRoutes from "./routes/channels.js";
+
+const app = express();
+const PORT = parseInt(process.env.API_PORT || "3001", 10);
+
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json());
+
+// Routes
+app.use("/api/health", healthRoutes);
+app.use("/api/sandboxes", sandboxRoutes);
+app.use("/api/sandboxes", logRoutes); // /api/sandboxes/:name/logs, /watch
+app.use("/api/sandboxes", draftPolicyRoutes); // /api/sandboxes/:name/draft-policy/*
+app.use("/api/providers", providerRoutes);
+app.use("/api/config", configRoutes);
+app.use("/api/models", modelRoutes);
+app.use("/api/gateway-token", tokenRoutes);
+app.use("/api/sandboxes", activePolicyRoutes); // /api/sandboxes/:name/active-policy
+app.use("/api/gateway-routes", gatewayRoutes); // /api/gateway-routes, /sync
+app.use("/api/channels", channelRoutes);       // /api/channels, /start, /stop, /config
+
+// Catch-all 404
+app.use((_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
+// Error handler
+app.use((err, _req, res, _next) => {
+  console.error("[api]", err.message);
+  res.status(500).json({ error: "Internal server error" });
+});
+
+app.listen(PORT, () => {
+  console.log(`Diffract API bridge listening on :${PORT}`);
+});
+
+export default app;

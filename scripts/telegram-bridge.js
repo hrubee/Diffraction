@@ -27,7 +27,6 @@ if (!OPENSHELL) {
 }
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const API_KEY = process.env.NVIDIA_API_KEY;
 const SANDBOX = process.env.SANDBOX_NAME || "diffract";
 const ALLOWED_CHATS = process.env.ALLOWED_CHAT_IDS
   ? process.env.ALLOWED_CHAT_IDS.split(",").map((s) => s.trim())
@@ -36,7 +35,6 @@ const ALLOWED_CHATS = process.env.ALLOWED_CHAT_IDS
 const RATE_LIMIT_PER_MIN = parseInt(process.env.DIFFRACT_TG_RATE_LIMIT || "10", 10);
 
 if (!TOKEN) { console.error("TELEGRAM_BOT_TOKEN required"); process.exit(1); }
-if (!API_KEY) { console.error("NVIDIA_API_KEY required"); process.exit(1); }
 
 let offset = 0;
 
