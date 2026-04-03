@@ -1,83 +1,38 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import {
-  MessageSquare,
-  LayoutDashboard,
-  Cpu,
-  Shield,
-  Puzzle,
-  Settings,
-  LogOut,
-  Zap,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { usePathname } from "next/navigation";
+import Sidebar from "@/components/sidebar";
+import { AuthGuard } from "@/components/auth-guard";
 
-const NAV_ITEMS = [
-  { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/models", label: "Models", icon: Cpu },
-  { href: "/policies", label: "Policies", icon: Shield },
-  { href: "/skills", label: "Skills", icon: Puzzle },
-  { href: "/settings", label: "Settings", icon: Settings },
-];
+// Routes that render without the sidebar and without auth enforcement.
+const PUBLIC_PATHS = ["/login"];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+interface AppShellProps {
+  children: React.ReactNode;
+}
+
+/**
+ * AppShell is the client boundary that gates the Sidebar and AuthGuard.
+ * - On /login: renders children directly — no sidebar, no auth check.
+ * - On all other routes: wraps children in AuthGuard and renders Sidebar.
+ *
+ * This must be a client component because usePathname() requires the
+ * client navigation context.
+ */
+export function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
-  const router = useRouter();
+  const isPublic = PUBLIC_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/")
+  );
 
-  async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
+  if (isPublic) {
+    return <>{children}</>;
   }
 
   return (
-    <div className="flex h-screen">
-      {/* Sidebar */}
-      <aside className="w-56 border-r bg-sidebar flex flex-col">
-        <div className="p-4 border-b">
-          <Link href="/chat" className="flex items-center gap-2">
-            <Zap className="h-5 w-5 text-primary" />
-            <span className="font-semibold text-lg">Diffract</span>
-          </Link>
-        </div>
-
-        <nav className="flex-1 p-2 space-y-1">
-          {NAV_ITEMS.map((item) => {
-            const active = pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                  active
-                    ? "bg-accent text-accent-foreground font-medium"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                }`}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="p-2 border-t">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-muted-foreground"
-            onClick={handleLogout}
-          >
-            <LogOut className="h-4 w-4 mr-2" />
-            Logout
-          </Button>
-        </div>
-      </aside>
-
-      {/* Main content */}
+    <AuthGuard>
+      <Sidebar />
       <main className="flex-1 overflow-auto">{children}</main>
-    </div>
+    </AuthGuard>
   );
 }

@@ -7,6 +7,7 @@ const nav = [
   { href: "/", label: "Dashboard", icon: "grid" },
   { href: "/sandboxes", label: "Sandboxes", icon: "box" },
   { href: "/channels", label: "Channels", icon: "channels" },
+  { href: "/connect-tools", label: "Connect Tools", icon: "plug" },
   { href: "/providers", label: "Providers", icon: "key" },
   { href: "/models", label: "Models", icon: "cpu" },
   { href: "/skills", label: "Skills", icon: "zap" },
@@ -20,6 +21,7 @@ const icons: Record<string, string> = {
   key: "M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4",
   cpu: "M18 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2zM9 9h6v6H9z",
   zap: "M13 2L3 14h9l-1 10 10-12h-9l1-10z",
+  plug: "M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83",
   sliders:
     "M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6",
 };

@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+preset:
+  name: zapier_mcp
+  description: "Zapier MCP — access to Zapier's action platform (8,000+ app integrations via MCP/SSE)"
+
+network_policies:
+  zapier_mcp:
+    name: zapier_mcp
+    endpoints:
+      - host: mcp.zapier.com
+        port: 443
+        tls: skip

@@ -14,6 +14,9 @@ import tokenRoutes from "./routes/token.js";
 import activePolicyRoutes from "./routes/active-policy.js";
 import gatewayRoutes from "./routes/gateway-routes.js";
 import channelRoutes from "./routes/channels.js";
+import mcpRoutes from "./routes/mcp.js";
+import authRoutes from "./routes/auth.js";
+import { requireAuth } from "./lib/auth.js";
 
 const app = express();
 const PORT = parseInt(process.env.API_PORT || "3001", 10);
@@ -21,8 +24,14 @@ const PORT = parseInt(process.env.API_PORT || "3001", 10);
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
-// Routes
+// Auth routes — mounted BEFORE the auth middleware so login/logout are public.
+app.use("/api/auth", authRoutes);
+
+// Health check — exempt from auth (used by infrastructure probes).
 app.use("/api/health", healthRoutes);
+
+// Apply auth middleware to all remaining /api/* routes.
+app.use("/api", requireAuth);
 app.use("/api/sandboxes", sandboxRoutes);
 app.use("/api/sandboxes", logRoutes); // /api/sandboxes/:name/logs, /watch
 app.use("/api/sandboxes", draftPolicyRoutes); // /api/sandboxes/:name/draft-policy/*
@@ -33,6 +42,7 @@ app.use("/api/gateway-token", tokenRoutes);
 app.use("/api/sandboxes", activePolicyRoutes); // /api/sandboxes/:name/active-policy
 app.use("/api/gateway-routes", gatewayRoutes); // /api/gateway-routes, /sync
 app.use("/api/channels", channelRoutes);       // /api/channels, /start, /stop, /config
+app.use("/api/mcp", mcpRoutes);               // /api/mcp/zapier, /tools, /sync
 
 // Catch-all 404
 app.use((_req, res) => {

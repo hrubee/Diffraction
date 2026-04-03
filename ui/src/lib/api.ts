@@ -57,6 +57,16 @@ export async function deleteSandbox(name: string) {
   );
 }
 
+export async function createSandbox(
+  name: string,
+  spec?: Record<string, unknown>
+) {
+  return request<Sandbox>("/api/sandboxes", {
+    method: "POST",
+    body: JSON.stringify({ name, spec: spec || {} }),
+  });
+}
+
 // Providers
 export interface Provider {
   id: string;
