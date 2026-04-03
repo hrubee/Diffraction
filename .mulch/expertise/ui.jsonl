@@ -1,0 +1,1 @@
+{"type":"failure","description":"NEXT_PUBLIC_API_URL fallback bug: empty string is falsy in JS so || fell back to localhost:3001 in production","resolution":"Use nullish coalescing ?? instead of || so empty string means relative paths work correctly","classification":"tactical","recorded_at":"2026-04-02T17:48:23.921Z","id":"mx-2120a1"}
