@@ -4,6 +4,7 @@
 import { Router } from "express";
 import { spawn } from "child_process";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 const router = Router();
@@ -11,7 +12,15 @@ const router = Router();
 // Project root — two levels up from api/routes/
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "../../");
-const CHANNELS_FILE = "/tmp/diffract-channels.json";
+
+// Persist channels to ~/.diffract/ so they survive server restarts and /tmp clears.
+const DIFFRACT_DIR = path.join(os.homedir(), ".diffract");
+const CHANNELS_FILE = path.join(DIFFRACT_DIR, "channels.json");
+
+// Ensure ~/.diffract/ directory exists
+if (!fs.existsSync(DIFFRACT_DIR)) {
+  fs.mkdirSync(DIFFRACT_DIR, { recursive: true, mode: 0o700 });
+}
 
 // --- Persistence helpers ---
 
@@ -80,34 +89,77 @@ async function verifySandbox(name) {
 
 // --- Routes ---
 
-// GET /api/channels — list all channels with live status
-router.get("/", (_req, res) => {
+// GET /api/channels — list all channels with live status; auto-restart dead channels
+router.get("/", async (_req, res) => {
   const stored = loadChannels();
 
-  const channels = Object.entries(stored).map(([type, entry]) => {
-    const running = isPidRunning(entry.pid);
+  const channelEntries = await Promise.all(
+    Object.entries(stored).map(async ([type, entry]) => {
+      const running = isPidRunning(entry.pid);
 
-    // If the process has died, clear the PID in storage so future reads are accurate
-    if (entry.pid && !running) {
-      stored[type] = { ...entry, pid: null, status: "stopped" };
-    }
+      // Auto-restart: if we have stored credentials but the process is dead, try to revive it
+      if (!running && entry.token && entry.sandbox) {
+        const scriptPath = path.join(PROJECT_ROOT, "scripts", "telegram-bridge.js");
+        if (type === "telegram" && fs.existsSync(scriptPath)) {
+          try {
+            const env = {
+              ...process.env,
+              TELEGRAM_BOT_TOKEN: entry.token,
+              SANDBOX_NAME: entry.sandbox,
+            };
+            if (entry.allowedChatIds?.length > 0) {
+              env.ALLOWED_CHAT_IDS = entry.allowedChatIds.join(",");
+            }
+            const child = spawn("node", [scriptPath], {
+              env,
+              detached: true,
+              stdio: "ignore",
+            });
+            child.unref();
+            // Brief wait to let the process stabilise before reporting status
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            const revived = isPidRunning(child.pid);
+            if (revived) {
+              stored[type] = { ...entry, pid: child.pid, status: "running" };
+              return {
+                type,
+                status: "running",
+                sandbox: entry.sandbox || null,
+                pid: child.pid,
+                config: {
+                  hasToken: Boolean(entry.token),
+                  allowedChatIds: entry.allowedChatIds || [],
+                },
+              };
+            }
+          } catch {
+            // auto-restart failed — fall through to stopped status
+          }
+        }
 
-    return {
-      type,
-      status: running ? "running" : "stopped",
-      sandbox: entry.sandbox || null,
-      pid: running ? entry.pid : null,
-      config: {
-        hasToken: Boolean(entry.token),
-        allowedChatIds: entry.allowedChatIds || [],
-      },
-    };
-  });
+        // Clear dead PID
+        stored[type] = { ...entry, pid: null, status: "stopped" };
+      } else if (entry.pid && !running) {
+        stored[type] = { ...entry, pid: null, status: "stopped" };
+      }
+
+      return {
+        type,
+        status: running ? "running" : "stopped",
+        sandbox: entry.sandbox || null,
+        pid: running ? entry.pid : null,
+        config: {
+          hasToken: Boolean(entry.token),
+          allowedChatIds: entry.allowedChatIds || [],
+        },
+      };
+    })
+  );
 
   // Persist any status corrections made above
   saveChannels(stored);
 
-  res.json({ channels });
+  res.json({ channels: channelEntries });
 });
 
 // POST /api/channels/:type/start — start a channel bridge

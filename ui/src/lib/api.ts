@@ -201,3 +201,49 @@ export async function approveAllDraftChunks(
     }
   );
 }
+
+// Fleet status
+export interface FleetSandbox {
+  name: string;
+  phase: string;
+  current_policy_version: number;
+  created_at_ms: string;
+  port_forward_active: boolean;
+}
+
+export interface FleetStatus {
+  sandboxes: FleetSandbox[];
+  inference: { provider: string | null; model: string | null };
+  gateway_healthy: boolean;
+}
+
+export async function getFleetStatus() {
+  return request<FleetStatus>("/api/health/fleet");
+}
+
+// Audit log
+export interface AuditEvent {
+  timestamp: string;
+  type: "policy_update" | "api_request" | string;
+  sandbox: string | null;
+  details: string;
+  method?: string;
+  path?: string;
+  status?: number;
+  authenticated?: boolean;
+}
+
+export async function getAuditLog(params?: {
+  sandbox?: string;
+  type?: string;
+  limit?: number;
+  offset?: number;
+}) {
+  const qs = new URLSearchParams();
+  if (params?.sandbox) qs.set("sandbox", params.sandbox);
+  if (params?.type) qs.set("type", params.type);
+  if (params?.limit != null) qs.set("limit", String(params.limit));
+  if (params?.offset != null) qs.set("offset", String(params.offset));
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+  return request<{ events: AuditEvent[]; total: number }>(`/api/audit${query}`);
+}

@@ -12,6 +12,7 @@ const nav = [
   { href: "/models", label: "Models", icon: "cpu" },
   { href: "/skills", label: "Skills", icon: "zap" },
   { href: "/settings", label: "Settings", icon: "sliders" },
+  { href: "/audit", label: "Audit Log", icon: "clipboard" },
 ];
 
 const icons: Record<string, string> = {
@@ -24,6 +25,8 @@ const icons: Record<string, string> = {
   plug: "M12 2v4m0 12v4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83M2 12h4m12 0h4M4.93 19.07l2.83-2.83m8.48-8.48l2.83-2.83",
   sliders:
     "M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6",
+  clipboard:
+    "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
 };
 
 export default function Sidebar() {

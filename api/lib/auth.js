@@ -75,6 +75,7 @@ function extractSessionCookie(cookieHeader) {
  *   - diffract_session cookie set by POST /api/auth/login
  *
  * Returns 401 { error: "Unauthorized" } if neither is present or valid.
+ * On authenticated requests, appends an entry to the audit buffer.
  *
  * @type {import("express").RequestHandler}
  */
@@ -86,6 +87,7 @@ export function requireAuth(req, res, next) {
   if (authHeader.startsWith("Bearer ")) {
     const candidate = authHeader.slice(7).trim();
     if (candidate === token) {
+      _recordAfterResponse(req, res, true);
       return next();
     }
   }
@@ -93,8 +95,38 @@ export function requireAuth(req, res, next) {
   // 2. Check diffract_session cookie
   const cookieValue = extractSessionCookie(req.headers["cookie"]);
   if (cookieValue && cookieValue === token) {
+    _recordAfterResponse(req, res, true);
     return next();
   }
 
+  // Unauthenticated — record the attempt then reject
+  _recordAfterResponse(req, res, false);
   res.status(401).json({ error: "Unauthorized" });
+}
+
+/**
+ * Hook into the response finish event so we can record the final status code.
+ * We import the audit buffer lazily to avoid a circular-import issue at module
+ * load time (auth.js → audit.js → grpc-client.js … → nothing that imports auth).
+ *
+ * @param {import("express").Request}  req
+ * @param {import("express").Response} res
+ * @param {boolean} authenticated
+ */
+function _recordAfterResponse(req, res, authenticated) {
+  res.on("finish", () => {
+    // Dynamic import to sidestep circular dependency at startup
+    import("../routes/audit.js")
+      .then(({ recordApiRequest }) => {
+        recordApiRequest({
+          method: req.method,
+          path: req.path,
+          status: res.statusCode,
+          authenticated,
+        });
+      })
+      .catch(() => {
+        // Audit recording is best-effort — never let it crash the server
+      });
+  });
 }

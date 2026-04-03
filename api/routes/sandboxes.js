@@ -55,25 +55,42 @@ router.delete("/:name", async (req, res) => {
 router.post("/:name/restart-gateway", async (req, res) => {
   try {
     const name = req.params.name;
-    const exec = `export PATH="$PATH:$HOME/.local/bin"; openshell doctor exec -- kubectl exec -n openshell ${name} --`;
+    const kubectl = `export PATH="$PATH:$HOME/.local/bin"; openshell doctor exec -- kubectl exec -n openshell ${name} --`;
 
-    // Stop gateway
+    // Step 1 — Find the gateway PID using /proc scanning
+    let gatewyPid = null;
     try {
-      execSync(`${exec} /usr/local/bin/diffract gateway stop`, {
-        encoding: "utf-8", timeout: 15000,
-      });
-    } catch { /* may fail if not running */ }
+      const pidOutput = execSync(
+        `${kubectl} node -e "const fs=require('fs'); const files=fs.readdirSync('/proc').filter(f=>/^\\\\d+$/.test(f)); for(const p of files){try{const cmd=fs.readFileSync('/proc/'+p+'/cmdline','utf8'); if(cmd.includes('openclaw-gateway')){console.log(p);break;}}catch{}}"`,
+        { encoding: "utf-8", timeout: 10000 }
+      ).trim().replace(/\x1b\[[0-9;]*m/g, "");
+      if (pidOutput && /^\d+$/.test(pidOutput)) {
+        gatewyPid = pidOutput;
+      }
+    } catch {
+      // process not found — that's OK, we'll start fresh
+    }
 
-    // Wait for port to free
+    // Step 2 — Kill the gateway if found
+    if (gatewyPid) {
+      try {
+        execSync(
+          `${kubectl} node -e "process.kill(${gatewyPid}, 9)"`,
+          { encoding: "utf-8", timeout: 8000 }
+        );
+      } catch { /* already dead */ }
+    }
+
+    // Step 3 — Wait for the port to free
     await new Promise((r) => setTimeout(r, 3000));
 
-    // Start gateway (use `diffract gateway` not `gateway run` per instructions.md)
+    // Step 4 — Start gateway in background
     execSync(
-      `${exec} bash -c "nohup /usr/local/bin/diffract gateway > /tmp/gw.log 2>&1 &"`,
+      `${kubectl} bash -c "nohup /usr/local/bin/diffract gateway > /tmp/gw.log 2>&1 &"`,
       { encoding: "utf-8", timeout: 10000 }
     );
 
-    // Wait for health
+    // Step 5 — Poll health for up to 30 seconds (15 × 2s)
     let healthy = false;
     for (let i = 0; i < 15; i++) {
       await new Promise((r) => setTimeout(r, 2000));
