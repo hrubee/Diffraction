@@ -1393,6 +1393,41 @@ async function onboard(opts = {}) {
     }
   } catch { /* non-fatal */ }
 
+  // Post-onboard: set up Caddy reverse proxy and start dashboard services
+  try {
+    console.log("");
+    console.log("  Setting up web dashboard...");
+
+    // Install Caddy if not present
+    const hasCaddy = !!runCapture("which caddy 2>/dev/null", { ignoreError: true });
+    if (!hasCaddy && process.platform === "linux") {
+      console.log("  Installing Caddy...");
+      run("apt-get install -y caddy 2>/dev/null || true", { stdio: ["ignore", "ignore", "inherit"] });
+    }
+
+    // Copy Caddyfile and start Caddy
+    const caddyfileSrc = path.join(PROJECT_ROOT, "deploy", "caddy", "Caddyfile");
+    if (fs.existsSync(caddyfileSrc) && fs.existsSync("/etc/caddy")) {
+      fs.copyFileSync(caddyfileSrc, "/etc/caddy/Caddyfile");
+      run("systemctl restart caddy 2>/dev/null && systemctl enable caddy 2>/dev/null || true", { ignoreError: true });
+      console.log("  ✓ Caddy reverse proxy configured");
+    }
+
+    // Start API bridge
+    const apiDir = path.join(PROJECT_ROOT, "api");
+    if (fs.existsSync(path.join(apiDir, "server.js"))) {
+      run(`mkdir -p /tmp/diffract-ui && cd "${apiDir}" && nohup node server.js > /tmp/diffract-ui/api.log 2>&1 &`, { ignoreError: true });
+      console.log("  ✓ API bridge started on :3001");
+    }
+
+    // Start Next.js UI
+    const uiDir = path.join(PROJECT_ROOT, "ui");
+    if (fs.existsSync(path.join(uiDir, ".next"))) {
+      run(`cd "${uiDir}" && nohup npm run start > /tmp/diffract-ui/ui.log 2>&1 &`, { ignoreError: true });
+      console.log("  ✓ Dashboard UI started on :3000");
+    }
+  } catch { /* non-fatal — dashboard can be started manually */ }
+
   session.completeSession({ sandboxName, model, provider });
   printDashboard(sandboxName, model, provider);
 }

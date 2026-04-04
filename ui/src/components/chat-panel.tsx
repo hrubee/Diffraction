@@ -4,25 +4,18 @@ import { useEffect, useState } from "react";
 
 export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
   const [token, setToken] = useState<string | null>(null);
-  const [gatewayUrl, setGatewayUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
 
   useEffect(() => {
-    // Fetch token and gateway route in parallel
-    Promise.all([
-      fetch("/api/gateway-token")
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null),
-      fetch(`/api/gateway-routes/${encodeURIComponent(sandboxName)}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null),
-    ]).then(([tokenData, routeData]) => {
-      if (tokenData?.token) setToken(tokenData.token);
-      if (routeData?.url) setGatewayUrl(routeData.url);
-      setLoading(false);
-    });
+    fetch("/api/gateway-token")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.token) setToken(data.token);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [sandboxName]);
 
   const copyToken = () => {
@@ -61,19 +54,15 @@ export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
             >
               New Session
             </button>
-            {gatewayUrl && (
-              <>
-                <span className="text-zinc-700">|</span>
-                <a
-                  href={gatewayUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-indigo-400 hover:text-indigo-300"
-                >
-                  Open in new tab
-                </a>
-              </>
-            )}
+            <span className="text-zinc-700">|</span>
+            <a
+              href="/__openclaw/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-indigo-400 hover:text-indigo-300"
+            >
+              Open in new tab
+            </a>
           </div>
         )}
 
@@ -84,23 +73,13 @@ export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
         )}
       </div>
 
-      {/* OpenClaw UI iframe — uses /__openclaw/ for API compatibility */}
-      {gatewayUrl ? (
-        <iframe
-          key={iframeKey}
-          src="/__openclaw/"
-          className="flex-1 w-full rounded-lg border border-zinc-700/50 bg-zinc-950"
-          allow="clipboard-write; clipboard-read"
-        />
-      ) : loading ? (
-        <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">
-          Connecting to sandbox gateway...
-        </div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center text-amber-400 text-sm">
-          No gateway route for {sandboxName}. Run: diffract {sandboxName} connect
-        </div>
-      )}
+      {/* OpenClaw UI iframe — /__openclaw/ is always available via Caddy */}
+      <iframe
+        key={iframeKey}
+        src="/__openclaw/"
+        className="flex-1 w-full rounded-lg border border-zinc-700/50 bg-zinc-950"
+        allow="clipboard-write; clipboard-read"
+      />
 
       {token && (
         <p className="mt-2 text-[10px] text-zinc-600 text-center">
