@@ -1,6 +1,12 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import {
+  listRelayRoutes,
+  createRelayRoute,
+  deleteRelayRoute,
+} from "@/lib/api";
+import type { RelayRoute } from "@/lib/api";
 
 // --- Types ---
 
@@ -412,6 +418,251 @@ function ChannelCard({
   );
 }
 
+// --- Relay routing rules editor ---
+
+function RelayRoutesEditor({ sandboxes }: { sandboxes: SandboxEntry[] }) {
+  const [routes, setRoutes] = useState<RelayRoute[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [addForm, setAddForm] = useState({ from: "", to: "", description: "" });
+  const [addOpen, setAddOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const loadRoutes = useCallback(async () => {
+    try {
+      const data = await listRelayRoutes();
+      setRoutes(data.routes);
+    } catch {
+      // non-fatal
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRoutes();
+    const iv = setInterval(loadRoutes, 10_000);
+    return () => clearInterval(iv);
+  }, [loadRoutes]);
+
+  const handleAdd = async () => {
+    if (!addForm.from || !addForm.to) {
+      setAddError("Both source and target sandbox are required");
+      return;
+    }
+    if (addForm.from === addForm.to) {
+      setAddError("Source and target must be different sandboxes");
+      return;
+    }
+    setAdding(true);
+    setAddError(null);
+    try {
+      await createRelayRoute(addForm.from, addForm.to, addForm.description || undefined);
+      setAddForm({ from: "", to: "", description: "" });
+      setAddOpen(false);
+      await loadRoutes();
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : "Failed to create route");
+    }
+    setAdding(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      await deleteRelayRoute(id);
+      await loadRoutes();
+    } catch {
+      // non-fatal
+    }
+    setDeletingId(null);
+  };
+
+  const sandboxOptions = sandboxes.map((s) => s.name);
+
+  return (
+    <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-semibold">Relay Routing Rules</h2>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Cross-sandbox message forwarding via the relay service on :9090.
+          </p>
+        </div>
+        <button
+          onClick={() => { setAddOpen((v) => !v); setAddError(null); }}
+          className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-500 transition-colors"
+        >
+          Add Route
+        </button>
+      </div>
+
+      {/* Add route form */}
+      {addOpen && (
+        <div className="mb-4 p-3 bg-zinc-900/50 border border-zinc-700/50 rounded-lg space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">
+                From sandbox
+              </label>
+              {sandboxOptions.length > 0 ? (
+                <select
+                  value={addForm.from}
+                  onChange={(e) => setAddForm((f) => ({ ...f, from: e.target.value }))}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select sandbox...</option>
+                  {sandboxOptions.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  placeholder="sandbox-name"
+                  value={addForm.from}
+                  onChange={(e) => setAddForm((f) => ({ ...f, from: e.target.value }))}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1">
+                To sandbox
+              </label>
+              {sandboxOptions.length > 0 ? (
+                <select
+                  value={addForm.to}
+                  onChange={(e) => setAddForm((f) => ({ ...f, to: e.target.value }))}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Select sandbox...</option>
+                  {sandboxOptions.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  placeholder="sandbox-name"
+                  value={addForm.to}
+                  onChange={(e) => setAddForm((f) => ({ ...f, to: e.target.value }))}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+                />
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1">
+              Description <span className="text-zinc-600 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Research agent forwards to summariser"
+              value={addForm.description}
+              onChange={(e) => setAddForm((f) => ({ ...f, description: e.target.value }))}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          {addError && (
+            <p className="text-xs text-red-400">{addError}</p>
+          )}
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAdd}
+              disabled={adding}
+              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {adding ? "Creating..." : "Create Route"}
+            </button>
+            <button
+              onClick={() => { setAddOpen(false); setAddError(null); }}
+              className="px-4 py-2 text-sm text-zinc-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Routes list */}
+      {loading ? (
+        <div className="space-y-2">
+          {[0, 1].map((i) => (
+            <div key={i} className="h-10 bg-zinc-800/50 rounded-lg animate-pulse" />
+          ))}
+        </div>
+      ) : routes.length === 0 ? (
+        <div className="text-center py-8">
+          <p className="text-sm text-zinc-500">No relay routes configured.</p>
+          <p className="text-xs text-zinc-700 mt-1">
+            Routes define which sandbox pairs can exchange messages via the relay.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {routes.map((route) => {
+            const bothActive = route.from_active !== false && route.to_active !== false;
+            return (
+              <div
+                key={route.id}
+                className="flex items-center gap-3 px-3 py-2.5 bg-zinc-800/40 border border-zinc-700/40 rounded-lg text-sm"
+              >
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    bothActive ? "bg-emerald-400" : "bg-zinc-600"
+                  }`}
+                  title={bothActive ? "Both sandboxes active" : "One or both sandboxes offline"}
+                />
+                <span className="font-mono text-zinc-300 truncate">{route.from}</span>
+                <svg
+                  className="w-3 h-3 text-zinc-600 shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+                <span className="font-mono text-zinc-300 truncate">{route.to}</span>
+
+                {route.description && (
+                  <span className="text-xs text-zinc-600 truncate flex-1 hidden sm:block">
+                    {route.description}
+                  </span>
+                )}
+
+                <span className="text-xs text-zinc-600 shrink-0 ml-auto hidden sm:block">
+                  {route.message_count > 0 ? `${route.message_count} msgs` : "no msgs yet"}
+                </span>
+
+                <button
+                  onClick={() => handleDelete(route.id)}
+                  disabled={deletingId === route.id}
+                  className="text-zinc-600 hover:text-red-400 transition-colors disabled:opacity-50 shrink-0"
+                  title="Delete route"
+                >
+                  {deletingId === route.id ? (
+                    <span className="text-xs">...</span>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Page ---
 
 export default function ChannelsPage() {
@@ -566,6 +817,9 @@ export default function ChannelsPage() {
           ))}
         </div>
       )}
+
+      {/* Relay routing rules */}
+      <RelayRoutesEditor sandboxes={sandboxes} />
 
       {/* Info note */}
       {!loading && (

@@ -247,3 +247,46 @@ export async function getAuditLog(params?: {
   const query = qs.toString() ? `?${qs.toString()}` : "";
   return request<{ events: AuditEvent[]; total: number }>(`/api/audit${query}`);
 }
+
+// Relay routes
+export interface RelayRoute {
+  id: string;
+  from: string;
+  to: string;
+  description: string | null;
+  created: string;
+  message_count: number;
+  last_used: string | null;
+  from_active?: boolean;
+  to_active?: boolean;
+}
+
+export interface RelayStatus {
+  ok: boolean;
+  route_count: number;
+  active_sandboxes: string[];
+  sandbox_ports: Record<string, number>;
+  routes: RelayRoute[];
+}
+
+export async function getRelayStatus() {
+  return request<RelayStatus>("/api/relay/status");
+}
+
+export async function listRelayRoutes() {
+  return request<{ routes: RelayRoute[] }>("/api/relay/routes");
+}
+
+export async function createRelayRoute(from: string, to: string, description?: string) {
+  return request<{ route: RelayRoute }>("/api/relay/routes", {
+    method: "POST",
+    body: JSON.stringify({ from, to, description }),
+  });
+}
+
+export async function deleteRelayRoute(id: string) {
+  return request<{ deleted: boolean; route: RelayRoute }>(
+    `/api/relay/routes/${encodeURIComponent(id)}`,
+    { method: "DELETE" }
+  );
+}
