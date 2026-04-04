@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
-import { getFleetStatus } from "@/lib/api";
-import type { FleetStatus, FleetSandbox } from "@/lib/api";
+import { getFleetStatus, getRelayStatus } from "@/lib/api";
+import type { FleetStatus, FleetSandbox, RelayStatus } from "@/lib/api";
 import StatusBadge from "@/components/status-badge";
 
 // ---- Stat card ----
@@ -49,9 +49,72 @@ function GatewayIndicator({ healthy }: { healthy: boolean | null }) {
   );
 }
 
+// ---- Relay status indicator ----
+
+function RelayIndicator({ relay }: { relay: RelayStatus | null }) {
+  if (!relay) {
+    return (
+      <span className="flex items-center gap-2">
+        <span className="w-2.5 h-2.5 rounded-full bg-zinc-600 animate-pulse" />
+        <span>Loading...</span>
+      </span>
+    );
+  }
+  const activeRoutes = relay.routes.filter((r) => r.from_active && r.to_active).length;
+  return (
+    <span className="flex items-center gap-2">
+      <span className={`w-2.5 h-2.5 rounded-full ${relay.ok ? "bg-emerald-400" : "bg-red-400"}`} />
+      <span>
+        {relay.route_count} route{relay.route_count !== 1 ? "s" : ""}
+        {relay.route_count > 0 && (
+          <span className="text-zinc-500 ml-1">
+            ({activeRoutes} active)
+          </span>
+        )}
+      </span>
+    </span>
+  );
+}
+
+// ---- Sandbox health bar ----
+
+function HealthBar({ sandboxes }: { sandboxes: FleetSandbox[] }) {
+  if (sandboxes.length === 0) return null;
+  const phases = sandboxes.reduce<Record<string, number>>((acc, s) => {
+    const phase = s.phase.replace("SANDBOX_PHASE_", "").toLowerCase();
+    acc[phase] = (acc[phase] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const phaseColor: Record<string, string> = {
+    ready: "bg-emerald-500",
+    creating: "bg-yellow-500",
+    terminating: "bg-orange-500",
+    error: "bg-red-500",
+    unknown: "bg-zinc-600",
+  };
+
+  return (
+    <div className="flex items-center gap-3 flex-wrap">
+      {Object.entries(phases).map(([phase, count]) => (
+        <span key={phase} className="flex items-center gap-1.5 text-xs text-zinc-400">
+          <span className={`w-2 h-2 rounded-full ${phaseColor[phase] ?? "bg-zinc-600"}`} />
+          {count} {phase}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ---- Sandbox card ----
 
-function SandboxCard({ sandbox }: { sandbox: FleetSandbox }) {
+function SandboxCard({
+  sandbox,
+  relayRouteCount,
+}: {
+  sandbox: FleetSandbox;
+  relayRouteCount: number;
+}) {
   const created = sandbox.created_at_ms
     ? new Date(Number(sandbox.created_at_ms)).toLocaleDateString()
     : "---";
@@ -87,8 +150,69 @@ function SandboxCard({ sandbox }: { sandbox: FleetSandbox }) {
             {sandbox.port_forward_active ? "Active" : "Inactive"}
           </span>
         </div>
+        {relayRouteCount > 0 && (
+          <div className="flex items-center justify-between">
+            <span>Relay routes</span>
+            <span className="text-indigo-400">{relayRouteCount}</span>
+          </div>
+        )}
       </div>
     </Link>
+  );
+}
+
+// ---- Relay routes summary ----
+
+function RelayRoutesSummary({ relay }: { relay: RelayStatus }) {
+  if (relay.routes.length === 0) return null;
+
+  return (
+    <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold">Active Relay Routes</h3>
+        <Link
+          href="/channels"
+          className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+        >
+          Manage
+        </Link>
+      </div>
+      <div className="space-y-2">
+        {relay.routes.slice(0, 5).map((route) => (
+          <div
+            key={route.id}
+            className="flex items-center gap-2 text-xs"
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                route.from_active && route.to_active
+                  ? "bg-emerald-400"
+                  : "bg-zinc-600"
+              }`}
+            />
+            <span className="font-mono text-zinc-300">{route.from}</span>
+            <svg
+              className="w-3 h-3 text-zinc-600 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+            <span className="font-mono text-zinc-300">{route.to}</span>
+            {route.message_count > 0 && (
+              <span className="ml-auto text-zinc-600">{route.message_count} msgs</span>
+            )}
+          </div>
+        ))}
+        {relay.routes.length > 5 && (
+          <p className="text-xs text-zinc-600">
+            +{relay.routes.length - 5} more routes
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -131,16 +255,25 @@ function EmptyState() {
 
 export default function FleetDashboard() {
   const [fleet, setFleet] = useState<FleetStatus | null>(null);
+  const [relay, setRelay] = useState<RelayStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const data = await getFleetStatus();
-      setFleet(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load fleet status");
+      const [fleetData, relayData] = await Promise.allSettled([
+        getFleetStatus(),
+        getRelayStatus(),
+      ]);
+      if (fleetData.status === "fulfilled") {
+        setFleet(fleetData.value);
+        setError(null);
+      } else {
+        setError(fleetData.reason instanceof Error ? fleetData.reason.message : "Failed to load fleet status");
+      }
+      if (relayData.status === "fulfilled") {
+        setRelay(relayData.value);
+      }
     } finally {
       setLoading(false);
     }
@@ -156,6 +289,16 @@ export default function FleetDashboard() {
   const readyCount = sandboxes.filter(
     (s) => s.phase === "SANDBOX_PHASE_READY"
   ).length;
+
+  // Count relay routes per sandbox (as source or target)
+  const relayCountBySandbox = (relay?.routes ?? []).reduce<Record<string, number>>(
+    (acc, r) => {
+      acc[r.from] = (acc[r.from] ?? 0) + 1;
+      acc[r.to] = (acc[r.to] ?? 0) + 1;
+      return acc;
+    },
+    {}
+  );
 
   return (
     <div className="p-6 space-y-6">
@@ -173,7 +316,7 @@ export default function FleetDashboard() {
       )}
 
       {/* Top stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="Sandboxes"
           value={
@@ -184,8 +327,9 @@ export default function FleetDashboard() {
             )
           }
           sub={
-            !loading &&
-            `${readyCount} of ${sandboxes.length} ready`
+            !loading && (
+              <HealthBar sandboxes={sandboxes} />
+            )
           }
         />
 
@@ -195,7 +339,7 @@ export default function FleetDashboard() {
             loading ? (
               <span className="text-zinc-500">—</span>
             ) : fleet?.inference.model ? (
-              <span className="truncate block">{fleet.inference.model}</span>
+              <span className="truncate block text-base">{fleet.inference.model}</span>
             ) : (
               <span className="text-zinc-500 text-base">Not configured</span>
             )
@@ -209,6 +353,16 @@ export default function FleetDashboard() {
             <GatewayIndicator
               healthy={fleet ? fleet.gateway_healthy : null}
             />
+          }
+        />
+
+        <StatCard
+          label="Relay"
+          value={<RelayIndicator relay={relay} />}
+          sub={
+            relay
+              ? `${relay.active_sandboxes.length} sandbox${relay.active_sandboxes.length !== 1 ? "es" : ""} reachable`
+              : undefined
           }
         />
       </div>
@@ -230,7 +384,7 @@ export default function FleetDashboard() {
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="bg-zinc-800/30 border border-zinc-700/30 rounded-lg p-4 animate-pulse h-[120px]"
+                className="bg-zinc-800/30 border border-zinc-700/30 rounded-lg p-4 animate-pulse h-[140px]"
               />
             ))}
           </div>
@@ -240,12 +394,21 @@ export default function FleetDashboard() {
               <EmptyState />
             ) : (
               sandboxes.map((sb) => (
-                <SandboxCard key={sb.name} sandbox={sb} />
+                <SandboxCard
+                  key={sb.name}
+                  sandbox={sb}
+                  relayRouteCount={relayCountBySandbox[sb.name] ?? 0}
+                />
               ))
             )}
           </div>
         )}
       </div>
+
+      {/* Relay routes summary */}
+      {relay && relay.routes.length > 0 && (
+        <RelayRoutesSummary relay={relay} />
+      )}
 
       {/* Quick actions */}
       <div className="flex items-center gap-3 pt-2 border-t border-zinc-800">
@@ -275,6 +438,16 @@ export default function FleetDashboard() {
                      focus:outline-none focus:ring-2 focus:ring-zinc-500/50"
         >
           View All Sandboxes
+        </Link>
+
+        <Link
+          href="/channels"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-md
+                     bg-zinc-800 hover:bg-zinc-700 border border-zinc-700
+                     text-sm font-medium text-zinc-300 transition-colors
+                     focus:outline-none focus:ring-2 focus:ring-zinc-500/50"
+        >
+          Manage Channels
         </Link>
       </div>
     </div>
