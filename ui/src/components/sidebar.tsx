@@ -29,52 +29,102 @@ const icons: Record<string, string> = {
     "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2",
 };
 
-export default function Sidebar() {
+interface SidebarProps {
+  open?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
 
   return (
-    <aside className="w-56 bg-zinc-950 border-r border-zinc-800 flex flex-col">
-      <div className="p-4 border-b border-zinc-800">
-        <h1 className="text-lg font-bold text-white tracking-tight">
-          Diffract
-        </h1>
-        <p className="text-xs text-zinc-500">Control Plane</p>
-      </div>
-      <nav className="flex-1 p-2 space-y-0.5">
-        {nav.map(({ href, label, icon }) => {
-          const active =
-            href === "/" ? pathname === "/" : pathname.startsWith(href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
-                active
-                  ? "bg-indigo-600/20 text-indigo-400"
-                  : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
-              }`}
+    <>
+      {/* Mobile backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* Sidebar panel — overlay on mobile, static in flow on desktop */}
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-40 w-56
+          bg-zinc-950 border-r border-zinc-800 flex flex-col
+          transition-transform duration-200 ease-in-out
+          md:static md:z-auto md:translate-x-0 md:transition-none
+          ${open ? "translate-x-0" : "-translate-x-full"}
+        `}
+      >
+        <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-white tracking-tight">
+              Diffract
+            </h1>
+            <p className="text-xs text-zinc-500">Control Plane</p>
+          </div>
+          {/* Close button — mobile only */}
+          <button
+            className="md:hidden text-zinc-400 hover:text-white p-1 rounded-md"
+            onClick={onClose}
+            aria-label="Close navigation"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
             >
-              <svg
-                className="w-4 h-4 shrink-0"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                viewBox="0 0 24 24"
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
+          {nav.map(({ href, label, icon }) => {
+            const active =
+              href === "/" ? pathname === "/" : pathname.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                onClick={onClose}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
+                  active
+                    ? "bg-indigo-600/20 text-indigo-400"
+                    : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+                }`}
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d={icons[icon]}
-                />
-              </svg>
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
-      <div className="p-3 border-t border-zinc-800 text-xs text-zinc-600">
-        v0.1.0
-      </div>
-    </aside>
+                <svg
+                  className="w-4 h-4 shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d={icons[icon]}
+                  />
+                </svg>
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="p-3 border-t border-zinc-800 text-xs text-zinc-600">
+          v0.1.0
+        </div>
+      </aside>
+    </>
   );
 }
