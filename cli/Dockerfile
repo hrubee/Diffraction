@@ -36,8 +36,9 @@ RUN groupadd -r gateway && useradd -r -g gateway -d /sandbox -s /usr/sbin/nologi
     && mkdir -p /sandbox \
     && chown -R sandbox:sandbox /sandbox
 
-# Install Diffract Agent CLI from npm
-RUN npm install -g openclaw@2026.3.11 \
+# Install Diffract Agent CLI from npm (uses latest if OPENCLAW_VERSION not set)
+ARG OPENCLAW_VERSION=latest
+RUN npm install -g openclaw@${OPENCLAW_VERSION} \
     && mv /usr/local/bin/openclaw /usr/local/bin/diffract-cli
 
 # Install PyYAML for blueprint runner

@@ -1,25 +1,19 @@
 {
-  "name": "diffraction",
+  "name": "@diffract/cli",
   "version": "0.1.0",
-  "description": "Diffraction — run Diffraction inside OpenShell with NVIDIA inference",
+  "description": "Diffract CLI — deploy safe, autonomous AI agents",
   "license": "Apache-2.0",
   "bin": {
-    "diffraction": "./bin/diffraction.js"
+    "diffract": "./bin/diffract.js"
   },
   "scripts": {
-    "test": "node --test test/*.test.js",
-    "prepublishOnly": "cd diffraction && npm install --ignore-scripts && npm run build"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "diffraction": "npm:openclaw@2026.3.11"
+    "diffract-agent": "npm:openclaw@latest"
   },
   "files": [
     "bin/",
-    "diffraction/dist/",
-    "diffraction/diffraction.plugin.json",
-    "diffraction/package.json",
-    "diffraction-blueprint/",
-    "scripts/",
     "Dockerfile",
     ".dockerignore"
   ],
@@ -28,6 +22,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/NVIDIA/Diffraction.git"
+    "url": "https://github.com/hrubee/Diffract.git"
   }
 }

@@ -613,18 +613,32 @@ async function createSandbox(gpu) {
   ];
   // --gpu is intentionally omitted. See comment in startGateway().
 
-  // Inject CHAT_UI_URL into Dockerfile as a build arg so allowedOrigins is
-  // baked into the immutable config at build time (no runtime patching needed).
+  // Inject build args into Dockerfile
+  const dockerfilePath = path.join(buildCtx, "Dockerfile");
+  let df = fs.readFileSync(dockerfilePath, "utf-8");
+
+  // OpenClaw version: use latest by default, or env override
+  const openclawVersion = process.env.OPENCLAW_VERSION || "latest";
+  df = df.replace(
+    /^ARG OPENCLAW_VERSION=.*/m,
+    `ARG OPENCLAW_VERSION=${openclawVersion}`
+  );
+  if (openclawVersion === "latest") {
+    console.log("  Using latest OpenClaw version");
+  } else {
+    console.log(`  Using OpenClaw version: ${openclawVersion}`);
+  }
+
+  // Chat UI URL for allowedOrigins
   const chatUiUrl = process.env.CHAT_UI_URL || 'http://127.0.0.1:18789';
   if (chatUiUrl !== 'http://127.0.0.1:18789') {
-    const dockerfilePath = path.join(buildCtx, "Dockerfile");
-    let df = fs.readFileSync(dockerfilePath, "utf-8");
     df = df.replace(
       /^ARG CHAT_UI_URL=.*/m,
       `ARG CHAT_UI_URL=${chatUiUrl}`
     );
-    fs.writeFileSync(dockerfilePath, df);
   }
+
+  fs.writeFileSync(dockerfilePath, df);
 
   console.log(`  Creating sandbox '${sandboxName}' (this takes a few minutes on first run)...`);
   const envArgs = [`CHAT_UI_URL=${chatUiUrl}`];
