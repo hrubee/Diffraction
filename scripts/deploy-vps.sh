@@ -6,7 +6,7 @@
 # Idempotent. Zero interactive. Requires Ubuntu 24.04, root or sudo.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/NVIDIA/Diffract/main/scripts/deploy-vps.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/hrubee/Diffraction/main/scripts/deploy-vps.sh | bash
 #
 # Or with env overrides:
 #   DIFFRACT_DOMAIN=example.com SANDBOX_NAME=my-bot bash deploy-vps.sh
@@ -46,8 +46,8 @@ else
 fi
 
 SANDBOX_NAME="${SANDBOX_NAME:-my-assistant}"
-REPO_DIR="${REPO_DIR:-/root/diffract}"
-REPO_URL="${REPO_URL:-https://github.com/NVIDIA/Diffract.git}"
+REPO_DIR="${REPO_DIR:-$HOME/.diffract/repo}"
+REPO_URL="${REPO_URL:-https://github.com/hrubee/Diffraction.git}"
 DIFFRACT_DOMAIN="${DIFFRACT_DOMAIN:-}"
 OPENSHELL_VERSION="${OPENSHELL_VERSION:-0.0.21}"
 NVM_DIR="${NVM_DIR:-${HOME}/.nvm}"
@@ -81,7 +81,7 @@ if [ -s "$NVM_DIR/nvm.sh" ]; then
   info "nvm already installed: $(nvm --version 2>/dev/null || echo 'unknown')"
 else
   info "Installing nvm..."
-  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
   export NVM_DIR="$HOME/.nvm"
   # shellcheck source=/dev/null
   . "$NVM_DIR/nvm.sh"
@@ -156,27 +156,9 @@ if command -v openshell > /dev/null 2>&1; then
 fi
 
 if ! command -v openshell > /dev/null 2>&1; then
-  info "Downloading OpenShell v${OPENSHELL_VERSION}..."
-  ARCH="$(uname -m)"
-  case "$ARCH" in
-    x86_64|amd64)   OS_ASSET="openshell-x86_64-unknown-linux-musl.tar.gz" ;;
-    aarch64|arm64)  OS_ASSET="openshell-aarch64-unknown-linux-musl.tar.gz" ;;
-    *)               fail "Unsupported architecture: $ARCH" ;;
-  esac
-
-  OS_TMPDIR="$(mktemp -d)"
-  trap 'rm -rf "$OS_TMPDIR"' EXIT
-  curl -fsSL \
-    "https://github.com/NVIDIA/OpenShell/releases/download/v${OPENSHELL_VERSION}/${OS_ASSET}" \
-    -o "$OS_TMPDIR/$OS_ASSET"
-  tar xzf "$OS_TMPDIR/$OS_ASSET" -C "$OS_TMPDIR"
-
-  mkdir -p "${HOME}/.local/bin"
-  install -m 755 "$OS_TMPDIR/openshell" "${HOME}/.local/bin/openshell"
-  # Diffract gateway binary is the renamed openclaw binary (mx-266f1c)
-  if [ -f "$OS_TMPDIR/diffract" ]; then
-    install -m 755 "$OS_TMPDIR/diffract" /usr/local/bin/diffract
-  fi
+  info "Installing OpenShell v${OPENSHELL_VERSION}..."
+  OPENSHELL_VERSION=${OPENSHELL_VERSION} curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+  export PATH=$PATH:$HOME/.local/bin
   info "OpenShell $(openshell --version 2>/dev/null || echo "v${OPENSHELL_VERSION}") installed"
 fi
 
@@ -198,6 +180,29 @@ cd "$REPO_DIR/api" && npm install --silent
 
 info "Installing UI deps + building..."
 cd "$REPO_DIR/ui" && npm install --silent && npm run build 2>&1 | tail -5
+
+info "Installing CLI deps..."
+(cd "$REPO_DIR/cli" && npm install --ignore-scripts --silent)
+
+# Create diffract wrapper in /usr/local/bin
+BIN_DIR=/usr/local/bin
+WRAPPER=$BIN_DIR/diffract
+if [ ! -f "$WRAPPER" ] || ! grep -q "diffract.sh" "$WRAPPER" 2>/dev/null; then
+  info "Creating diffract wrapper at $WRAPPER..."
+  WRAPPER_CONTENT="#!/usr/bin/env bash
+export NVM_DIR=\"\$HOME/.nvm\"
+[ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"
+export PATH=\"\$PATH:\$HOME/.local/bin\"
+exec $REPO_DIR/diffract.sh \"\$@\""
+  if [ -w "$BIN_DIR" ]; then
+    printf '%s\n' "$WRAPPER_CONTENT" > "$WRAPPER"
+    chmod +x "$WRAPPER"
+  else
+    printf '%s\n' "$WRAPPER_CONTENT" | sudo tee "$WRAPPER" > /dev/null
+    sudo chmod +x "$WRAPPER"
+  fi
+  info "diffract wrapper created at $WRAPPER"
+fi
 
 info "Repo ready at $REPO_DIR"
 
@@ -262,20 +267,58 @@ else
   info "Caddy already installed: $(caddy version)"
 fi
 
-# Write Caddyfile — copy from repo template, substitute domain
+# Detect public IP and generate Caddyfile inline
+detect_public_ip() {
+  local ip
+  ip="$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null)" && echo "$ip" && return
+  ip="$(curl -sf --max-time 5 https://api.ipify.org 2>/dev/null)" && echo "$ip" && return
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')" && echo "$ip" && return
+  echo ""
+}
+
 CADDY_DIR="/etc/caddy"
 CADDY_CONF="$CADDY_DIR/Caddyfile"
-CADDY_TEMPLATE="$REPO_DIR/deploy/caddy/Caddyfile"
-
 mkdir -p "$CADDY_DIR"
 
-if [ -n "${DIFFRACT_DOMAIN:-}" ]; then
-  info "Writing Caddyfile for domain: $DIFFRACT_DOMAIN"
-  sed "s|{\\$DIFFRACT_DOMAIN:[^}]*}|$DIFFRACT_DOMAIN|g" "$CADDY_TEMPLATE" > "$CADDY_CONF"
-else
-  info "No DIFFRACT_DOMAIN set — using template with env-var substitution"
-  cp "$CADDY_TEMPLATE" "$CADDY_CONF"
+if [ -z "${DIFFRACT_DOMAIN:-}" ]; then
+  DIFFRACT_DOMAIN="$(detect_public_ip)"
+  if [ -n "$DIFFRACT_DOMAIN" ]; then
+    info "Detected public IP: $DIFFRACT_DOMAIN"
+  else
+    warn "Could not detect public IP — Caddy may not start"
+  fi
 fi
+
+# Use :80 for bare IP addresses; domain name triggers Caddy's automatic TLS
+if echo "${DIFFRACT_DOMAIN:-}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+  SITE_ADDR=":80"
+else
+  SITE_ADDR="${DIFFRACT_DOMAIN:-:80}"
+fi
+
+info "Writing Caddyfile (site: ${SITE_ADDR})..."
+cat > "$CADDY_CONF" <<CADDYEOF
+${SITE_ADDR} {
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websocket 127.0.0.1:18789
+
+    handle /__openclaw/* {
+        header_up Host 127.0.0.1:18789
+        reverse_proxy 127.0.0.1:18789
+    }
+
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3001
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:3000
+    }
+}
+CADDYEOF
 
 systemctl enable caddy
 systemctl restart caddy
