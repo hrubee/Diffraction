@@ -530,7 +530,7 @@ In a separate terminal from your sandbox connection:
 
 \`\`\`bash
 
-export TELEGRAM\_BOT\_TOKEN\="8376185430:AAGnQMVCJlKJZxho47CkwZmAU0dQHziFULw"
+export TELEGRAM\_BOT\_TOKEN\="YOUR\_TELEGRAM\_BOT\_TOKEN"
 
 nemoclaw start
 
@@ -540,7 +540,7 @@ Make permanent:
 
 \`\`\`bash
 
-echo 'export TELEGRAM\_BOT\_TOKEN="8376185430:AAGnQMVCJlKJZxho47CkwZmAU0dQHziFULw"' \>\> \~/.bashrc
+echo 'export TELEGRAM\_BOT\_TOKEN="YOUR\_TELEGRAM\_BOT\_TOKEN"' \>\> \~/.bashrc
 
 \`\`\`
 

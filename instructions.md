@@ -609,14 +609,14 @@ In a separate terminal from your sandbox connection:
 
 
 ```bash
-export TELEGRAM_BOT_TOKEN="8376185430:AAGnQMVCJlKJZxho47CkwZmAU0dQHziFULw"
+export TELEGRAM_BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN"
 nemoclaw start
 ```
 
 
 Make permanent:
 ```bash
-echo 'export TELEGRAM_BOT_TOKEN="8376185430:AAGnQMVCJlKJZxho47CkwZmAU0dQHziFULw"' >> ~/.bashrc
+echo 'export TELEGRAM_BOT_TOKEN="YOUR_TELEGRAM_BOT_TOKEN"' >> ~/.bashrc
 ```
 
 
