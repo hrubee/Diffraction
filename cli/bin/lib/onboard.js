@@ -253,7 +253,11 @@ async function installDocker() {
     if (user) {
       run(`sudo usermod -aG docker ${user}`, { ignoreError: true });
     }
-    run("sudo systemctl start docker", { ignoreError: true });
+    // Fix cgroup v2 for Ubuntu 24.04+ (required by OpenShell)
+    console.log("  Configuring Docker cgroup settings...");
+    run(`echo '{"default-cgroupns-mode": "host"}' | sudo tee /etc/docker/daemon.json > /dev/null`, { ignoreError: true });
+    run("sudo systemctl enable docker", { ignoreError: true });
+    run("sudo systemctl restart docker", { ignoreError: true });
     return waitForDocker();
 
   } else {
@@ -355,7 +359,7 @@ function getNonInteractiveModel(providerKey) {
 // ── Step 1: Preflight ────────────────────────────────────────────
 
 async function preflight() {
-  step(1, 8, "Preflight checks");
+  step(1, 8, "Preflight checks (Docker, CLI, ports)");
 
   // Docker — auto-install if missing, auto-start if not running
   if (!isDockerInstalled()) {
@@ -381,6 +385,19 @@ async function preflight() {
     }
   }
   console.log("  ✓ Docker is running");
+
+  // Ensure cgroup v2 fix is applied (required by OpenShell on Ubuntu 24.04+)
+  if (process.platform === "linux") {
+    try {
+      const daemonJson = runCapture("cat /etc/docker/daemon.json 2>/dev/null", { ignoreError: true });
+      if (!daemonJson || !daemonJson.includes("cgroupns")) {
+        console.log("  Applying cgroup v2 fix for OpenShell...");
+        run(`echo '{"default-cgroupns-mode": "host"}' | sudo tee /etc/docker/daemon.json > /dev/null`, { ignoreError: true });
+        run("sudo systemctl restart docker", { ignoreError: true });
+        waitForDocker();
+      }
+    } catch { /* non-fatal */ }
+  }
 
   const runtime = getContainerRuntime();
   if (isUnsupportedMacosRuntime(runtime)) {
@@ -529,7 +546,7 @@ async function startGateway(gpu) {
 // ── Step 3: Sandbox ──────────────────────────────────────────────
 
 async function createSandbox(gpu) {
-  step(3, 8, "Creating sandbox");
+  step(5, 8, "Creating sandbox");
 
   let sandboxName;
   while (true) {
@@ -691,7 +708,7 @@ async function createSandbox(gpu) {
 // ── Step 3.5: Browser install ────────────────────────────────────
 
 async function installBrowser(sandboxName) {
-  step(4, 8, "Installing browser in sandbox");
+  step(6, 8, "Installing browser in sandbox");
 
   const exec = `openshell doctor exec -- kubectl exec -n openshell ${sandboxName} --`;
 
@@ -770,7 +787,7 @@ print("configured")
 // ── Step 5: NIM ──────────────────────────────────────────────────
 
 async function setupNim(sandboxName, gpu) {
-  step(5, 8, "Configuring AI inference");
+  step(3, 8, "Configuring AI inference");
 
   let model = null;
   let provider = "nvidia-nim";
@@ -952,7 +969,7 @@ async function setupNim(sandboxName, gpu) {
 // ── Step 5: Inference provider ───────────────────────────────────
 
 async function setupInference(sandboxName, model, provider) {
-  step(6, 8, "Setting up inference provider");
+  step(4, 8, "Setting up inference provider");
 
   if (provider === "nvidia-nim") {
     // Create nvidia-nim provider
@@ -1021,7 +1038,7 @@ async function setupInference(sandboxName, model, provider) {
 // ── Step 6: Diffract ─────────────────────────────────────────────
 
 async function setupOpenclaw(sandboxName, model, provider) {
-  step(7, 8, "Setting up Diffract inside sandbox");
+  step(7, 8, "Setting up Diffract + starting gateway");
 
   const selectionConfig = getProviderSelectionConfig(provider, model);
   if (selectionConfig) {
@@ -1244,6 +1261,11 @@ async function onboard(opts = {}) {
     return step && step.status === "complete";
   };
 
+  // Step order follows NemoClaw pattern:
+  // 1. Preflight → 2. Gateway → 3. Provider selection → 4. Inference setup
+  // → 5. Sandbox create → 6. Browser install → 7. OpenClaw + gateway start → 8. Policies
+  // Provider/inference BEFORE sandbox so the sandbox gets the correct route at creation.
+
   let gpu;
   if (!shouldSkip("preflight")) {
     session.markStepStarted("preflight");
@@ -1262,6 +1284,30 @@ async function onboard(opts = {}) {
     console.log("  ✓ Gateway (skipped — already complete)");
   }
 
+  // Steps 3+4: Provider selection and inference setup BEFORE sandbox creation
+  let model, provider;
+  if (!shouldSkip("provider_selection")) {
+    session.markStepStarted("provider_selection");
+    try {
+      ({ model, provider } = await setupNim(null, gpu));
+      session.markStepComplete("provider_selection", { model, provider });
+    } catch (e) { session.markStepFailed("provider_selection", e.message); throw e; }
+  } else {
+    model = sess.model; provider = sess.provider;
+    console.log(`  ✓ Provider selection (skipped — already complete)`);
+  }
+
+  if (!shouldSkip("inference")) {
+    session.markStepStarted("inference");
+    try {
+      await setupInference(null, model, provider);
+      session.markStepComplete("inference");
+    } catch (e) { session.markStepFailed("inference", e.message); throw e; }
+  } else {
+    console.log("  ✓ Inference (skipped — already complete)");
+  }
+
+  // Step 5: Sandbox creation (now has correct inference route)
   let sandboxName;
   if (!shouldSkip("sandbox")) {
     session.markStepStarted("sandbox");
@@ -1274,6 +1320,7 @@ async function onboard(opts = {}) {
     console.log(`  ✓ Sandbox '${sandboxName}' (skipped — already complete)`);
   }
 
+  // Step 6: Browser install (non-fatal)
   if (!shouldSkip("browser")) {
     session.markStepStarted("browser");
     try {
@@ -1284,28 +1331,7 @@ async function onboard(opts = {}) {
     console.log("  ✓ Browser (skipped — already complete)");
   }
 
-  let model, provider;
-  if (!shouldSkip("provider_selection")) {
-    session.markStepStarted("provider_selection");
-    try {
-      ({ model, provider } = await setupNim(sandboxName, gpu));
-      session.markStepComplete("provider_selection", { model, provider });
-    } catch (e) { session.markStepFailed("provider_selection", e.message); throw e; }
-  } else {
-    model = sess.model; provider = sess.provider;
-    console.log(`  ✓ Provider selection (skipped — already complete)`);
-  }
-
-  if (!shouldSkip("inference")) {
-    session.markStepStarted("inference");
-    try {
-      await setupInference(sandboxName, model, provider);
-      session.markStepComplete("inference");
-    } catch (e) { session.markStepFailed("inference", e.message); throw e; }
-  } else {
-    console.log("  ✓ Inference (skipped — already complete)");
-  }
-
+  // Step 7: OpenClaw config + gateway start
   if (!shouldSkip("openclaw")) {
     session.markStepStarted("openclaw");
     try {
@@ -1316,6 +1342,7 @@ async function onboard(opts = {}) {
     console.log("  ✓ OpenClaw config (skipped — already complete)");
   }
 
+  // Step 8: Policy presets
   if (!shouldSkip("policies")) {
     session.markStepStarted("policies");
     try {

@@ -3,20 +3,113 @@
 
 const INFERENCE_ROUTE_URL = "https://inference.local/v1";
 const DEFAULT_CLOUD_MODEL = "nvidia/nemotron-3-super-120b-a12b";
-const CLOUD_MODEL_OPTIONS = [
-  { id: "nvidia/nemotron-3-super-120b-a12b", label: "Nemotron 3 Super 120B" },
-  { id: "moonshotai/kimi-k2.5", label: "Kimi K2.5" },
-  { id: "z-ai/glm5", label: "GLM-5" },
-  { id: "minimaxai/minimax-m2.5", label: "MiniMax M2.5" },
-  { id: "qwen/qwen3.5-397b-a17b", label: "Qwen3.5 397B A17B" },
-  { id: "openai/gpt-oss-120b", label: "GPT-OSS 120B" },
-];
 const DEFAULT_ROUTE_PROFILE = "inference-local";
 const DEFAULT_ROUTE_CREDENTIAL_ENV = "OPENAI_API_KEY";
 const MANAGED_PROVIDER_ID = "inference";
 const { DEFAULT_OLLAMA_MODEL } = require("./local-inference");
 
+// Remote provider configs — matches NemoClaw's provider support
+const REMOTE_PROVIDER_CONFIG = {
+  nvidia: {
+    label: "NVIDIA Endpoints",
+    providerName: "nvidia-nim",
+    providerType: "openai",
+    credentialEnv: "NVIDIA_API_KEY",
+    endpointUrl: "https://integrate.api.nvidia.com/v1",
+    helpUrl: "https://build.nvidia.com/settings/api-keys",
+    defaultModel: DEFAULT_CLOUD_MODEL,
+    skipVerify: false,
+  },
+  openai: {
+    label: "OpenAI",
+    providerName: "openai-api",
+    providerType: "openai",
+    credentialEnv: "OPENAI_API_KEY",
+    endpointUrl: "https://api.openai.com/v1",
+    helpUrl: "https://platform.openai.com/api-keys",
+    defaultModel: "gpt-5.4",
+    skipVerify: true,
+  },
+  anthropic: {
+    label: "Anthropic",
+    providerName: "anthropic-prod",
+    providerType: "anthropic",
+    credentialEnv: "ANTHROPIC_API_KEY",
+    endpointUrl: "https://api.anthropic.com",
+    helpUrl: "https://console.anthropic.com/settings/keys",
+    defaultModel: "claude-sonnet-4-6",
+    skipVerify: true,
+  },
+  gemini: {
+    label: "Google Gemini",
+    providerName: "gemini-api",
+    providerType: "openai",
+    credentialEnv: "GEMINI_API_KEY",
+    endpointUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    helpUrl: "https://aistudio.google.com/app/apikey",
+    defaultModel: "gemini-2.5-flash",
+    skipVerify: true,
+  },
+  custom: {
+    label: "Other OpenAI-compatible endpoint",
+    providerName: "compatible-endpoint",
+    providerType: "openai",
+    credentialEnv: "COMPATIBLE_API_KEY",
+    endpointUrl: "",
+    helpUrl: null,
+    defaultModel: "",
+    skipVerify: true,
+  },
+};
+
+// Curated model lists per remote provider
+const REMOTE_MODEL_OPTIONS = {
+  nvidia: [
+    { id: "nvidia/nemotron-3-super-120b-a12b", label: "Nemotron 3 Super 120B (default)" },
+    { id: "meta/llama-4-maverick-17b-128e-instruct", label: "Llama 4 Maverick" },
+    { id: "meta/llama-3.3-70b-instruct", label: "Llama 3.3 70B" },
+    { id: "deepseek-ai/deepseek-v3.1", label: "DeepSeek V3.1" },
+    { id: "qwen/qwen3.5-397b-a17b", label: "Qwen 3.5 397B" },
+  ],
+  openai: [
+    { id: "gpt-5.4", label: "GPT-5.4" },
+    { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
+    { id: "gpt-4.1", label: "GPT-4.1" },
+    { id: "gpt-4o", label: "GPT-4o" },
+  ],
+  anthropic: [
+    { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+    { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
+    { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
+  ],
+  gemini: [
+    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
+  ],
+};
+
+// Legacy CLOUD_MODEL_OPTIONS for backward compat
+const CLOUD_MODEL_OPTIONS = REMOTE_MODEL_OPTIONS.nvidia;
+
 function getProviderSelectionConfig(provider, model) {
+  // Check remote providers first
+  for (const [, cfg] of Object.entries(REMOTE_PROVIDER_CONFIG)) {
+    if (provider === cfg.providerName) {
+      return {
+        endpointType: "custom",
+        endpointUrl: INFERENCE_ROUTE_URL,
+        ncpPartner: null,
+        model: model || cfg.defaultModel,
+        profile: DEFAULT_ROUTE_PROFILE,
+        credentialEnv: DEFAULT_ROUTE_CREDENTIAL_ENV,
+        provider,
+        providerLabel: cfg.label,
+      };
+    }
+  }
+
+  // Legacy provider names
   switch (provider) {
     case "nvidia-nim":
       return {
@@ -70,6 +163,8 @@ module.exports = {
   DEFAULT_ROUTE_PROFILE,
   INFERENCE_ROUTE_URL,
   MANAGED_PROVIDER_ID,
+  REMOTE_MODEL_OPTIONS,
+  REMOTE_PROVIDER_CONFIG,
   getDiffractPrimaryModel,
   getProviderSelectionConfig,
 };

@@ -19,6 +19,18 @@ const POLICY_PRESETS = [
   { id: "zapier", label: "Zapier" },
 ] as const;
 
+const INFERENCE_OPTIONS = [
+  { provider: "nvidia", model: "nvidia/nemotron-3-super-120b-a12b", label: "Nemotron 3 Super 120B", group: "NVIDIA Endpoints" },
+  { provider: "nvidia", model: "meta/llama-4-maverick-17b-128e-instruct", label: "Llama 4 Maverick", group: "NVIDIA Endpoints" },
+  { provider: "nvidia", model: "deepseek-ai/deepseek-v3.1", label: "DeepSeek V3.1", group: "NVIDIA Endpoints" },
+  { provider: "openai", model: "gpt-5.4", label: "GPT-5.4", group: "OpenAI" },
+  { provider: "openai", model: "gpt-4.1", label: "GPT-4.1", group: "OpenAI" },
+  { provider: "anthropic", model: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", group: "Anthropic" },
+  { provider: "anthropic", model: "claude-opus-4-6", label: "Claude Opus 4.6", group: "Anthropic" },
+  { provider: "gemini", model: "gemini-2.5-flash", label: "Gemini 2.5 Flash", group: "Google Gemini" },
+  { provider: "gemini", model: "gemini-2.5-pro", label: "Gemini 2.5 Pro", group: "Google Gemini" },
+] as const;
+
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,28}[a-z0-9]$|^[a-z0-9]$/;
 
 function validateName(value: string): string | null {
@@ -38,6 +50,7 @@ export default function NewSandboxPage() {
   const [selectedPresets, setSelectedPresets] = useState<Set<string>>(
     new Set()
   );
+  const [selectedModel, setSelectedModel] = useState<string>(INFERENCE_OPTIONS[0].model);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -68,10 +81,16 @@ export default function NewSandboxPage() {
     setSubmitError(null);
     setSubmitting(true);
     try {
-      const spec: Record<string, unknown> = {};
+      const inference = INFERENCE_OPTIONS.find((o) => o.model === selectedModel) || INFERENCE_OPTIONS[0];
+      const spec: Record<string, unknown> = {
+        provider: inference.provider,
+        model: inference.model,
+      };
       if (selectedPresets.size > 0) {
         spec.policy_presets = Array.from(selectedPresets);
       }
+      // This triggers `diffract onboard --non-interactive` which takes 3-5 min.
+      // Returns 202 immediately — sandbox detail page polls status.
       await createSandbox(name, spec);
       startTransition(() => {
         router.push(`/sandboxes/${encodeURIComponent(name)}`);
@@ -223,6 +242,32 @@ export default function NewSandboxPage() {
               );
             })}
           </div>
+        </div>
+
+        {/* Inference model */}
+        <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
+            Inference Model
+          </h2>
+          <p className="text-xs text-zinc-500">
+            Select the AI model for this sandbox. You can change it later from the Models page.
+          </p>
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            disabled={submitting}
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+          >
+            {Array.from(new Set(INFERENCE_OPTIONS.map((o) => o.group))).map((group) => (
+              <optgroup key={group} label={group}>
+                {INFERENCE_OPTIONS.filter((o) => o.group === group).map((opt) => (
+                  <option key={opt.model} value={opt.model}>
+                    {opt.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
         </div>
 
         {/* GPU toggle */}
