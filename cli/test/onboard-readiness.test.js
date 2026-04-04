@@ -62,8 +62,8 @@ describe("sandbox readiness parsing", () => {
   });
 
   it("rejects when output only contains name in a URL or path", () => {
-    assert.ok(!isSandboxReady("Connecting to my-assistant.openshell.internal Ready", "my-assistant"));
-    // "my-assistant.openshell.internal" is cols[0], not "my-assistant"
+    assert.ok(!isSandboxReady("Connecting to my-assistant.diffract.internal Ready", "my-assistant"));
+    // "my-assistant.diffract.internal" is cols[0], not "my-assistant"
   });
 
   it("handles tab-separated output", () => {
@@ -129,12 +129,12 @@ describe("WSL sandbox name handling", () => {
 // A previous onboard session may leave the gateway container and port forward
 // running, causing port-conflict failures on the next onboard invocation.
 describe("stale gateway detection", () => {
-  it("detects active diffraction gateway from real output", () => {
-    // Actual output from `openshell gateway info -g diffraction` (ANSI stripped)
+  it("detects active diffract gateway from real output", () => {
+    // Actual output from `diffract gateway info -g diffract` (ANSI stripped)
     const output = [
       "Gateway Info",
       "",
-      "  Gateway: diffraction",
+      "  Gateway: diffract",
       "  Gateway endpoint: https://127.0.0.1:8080",
     ].join("\n");
     assert.ok(hasStaleGateway(output));
@@ -143,7 +143,7 @@ describe("stale gateway detection", () => {
   it("detects gateway from ANSI-colored output", () => {
     const output =
       "\x1b[1m\x1b[36mGateway Info\x1b[39m\x1b[0m\n\n" +
-      "  \x1b[2mGateway:\x1b[0m diffraction\n" +
+      "  \x1b[2mGateway:\x1b[0m diffract\n" +
       "  \x1b[2mGateway endpoint:\x1b[0m https://127.0.0.1:8080";
     assert.ok(hasStaleGateway(output));
   });
@@ -163,7 +163,7 @@ describe("stale gateway detection", () => {
   });
 
   it("returns false for a different gateway name", () => {
-    // If someone ran a non-diffraction gateway, we should not touch it
+    // If someone ran a non-diffract gateway, we should not touch it
     const output = [
       "Gateway Info",
       "",

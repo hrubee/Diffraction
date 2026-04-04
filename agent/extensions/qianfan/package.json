@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/qianfan-provider",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction Qianfan provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/deepgram-provider",
+  "version": "2026.3.14",
+  "private": true,
+  "description": "Diffraction Deepgram media-understanding provider",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/together-provider",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction Together provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

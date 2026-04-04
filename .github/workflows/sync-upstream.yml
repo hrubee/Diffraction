@@ -1,0 +1,77 @@
+name: Sync Upstream
+
+# Runs daily at 6am UTC, or manually from the Actions tab
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Which upstream to sync"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - openshell
+          - openclaw
+          - diffraction
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync upstream sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          TARGET="${{ github.event.inputs.target || 'all' }}"
+          bash scripts/sync-upstream.sh "$TARGET"
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create PR with upstream changes
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          BRANCH="sync/upstream-$(date +%Y%m%d)"
+          git checkout -b "$BRANCH"
+          git add -A
+          git commit -m "sync: pull latest from upstream $(date +%Y-%m-%d)"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "sync: upstream changes $(date +%Y-%m-%d)" \
+            --body "$(cat <<'EOF'
+          ## Summary
+          Automated sync from upstream repositories:
+          - [OpenShell](https://github.com/NVIDIA/OpenShell) → `crates/`, `proto/`, `deploy/`, `docs/`
+          - [OpenClaw](https://github.com/openclaw/openclaw) → `agent/`
+          - [Diffraction](https://github.com/NVIDIA/Diffraction) → `cli/`, `policies/`
+
+          All `openshell`/`openclaw`/`diffraction` references have been renamed to `diffract`.
+
+          ## Review checklist
+          - [ ] No merge conflicts
+          - [ ] Renames applied correctly
+          - [ ] No broken imports
+          EOF
+          )" \
+            --label "sync"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

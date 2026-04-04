@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: diffraction
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DIFFRACTION_GATEWAY_PORT
+        value: "8080"
+      - key: DIFFRACTION_STATE_DIR
+        value: /data/.diffraction
+      - key: DIFFRACTION_WORKSPACE_DIR
+        value: /data/workspace
+      - key: DIFFRACTION_GATEWAY_TOKEN
+        generateValue: true
+    disk:
+      name: diffraction-data
+      mountPath: /data
+      sizeGB: 1

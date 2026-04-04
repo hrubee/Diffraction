@@ -1,0 +1,14 @@
+# Default agent blueprint
+name: default
+description: "General-purpose autonomous AI agent"
+
+inference:
+  model: "nvidia/nemotron-3-super-120b-a12b"
+
+policy:
+  presets:
+    - npm
+    - pypi
+
+extensions: []
+skills: []

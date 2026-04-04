@@ -1,0 +1,21 @@
+# Coding assistant blueprint — AI pair programmer with dev tool access
+name: coding-assistant
+description: "AI coding assistant with GitHub, package registry, and container access"
+
+inference:
+  model: "nvidia/nemotron-3-super-120b-a12b"
+
+policy:
+  presets:
+    - github
+    - npm
+    - pypi
+    - docker
+
+extensions: []
+
+skills:
+  - coding-agent
+
+env:
+  GITHUB_TOKEN_ENV: GITHUB_TOKEN

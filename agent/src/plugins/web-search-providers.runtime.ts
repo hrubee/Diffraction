@@ -1,0 +1,186 @@
+import type { DiffractionConfig } from "../config/config.js";
+import { createSubsystemLogger } from "../logging/subsystem.js";
+import { loadDiffractionPlugins } from "./loader.js";
+import type { PluginLoadOptions } from "./loader.js";
+import { createPluginLoaderLogger } from "./logger.js";
+import { getActivePluginRegistry } from "./runtime.js";
+import type { PluginWebSearchProviderEntry } from "./types.js";
+import {
+  resolveBundledWebSearchResolutionConfig,
+  sortWebSearchProviders,
+} from "./web-search-providers.shared.js";
+
+const log = createSubsystemLogger("plugins");
+type WebSearchProviderSnapshotCacheEntry = {
+  expiresAt: number;
+  providers: PluginWebSearchProviderEntry[];
+};
+const webSearchProviderSnapshotCache = new WeakMap<
+  DiffractionConfig,
+  WeakMap<NodeJS.ProcessEnv, Map<string, WebSearchProviderSnapshotCacheEntry>>
+>();
+
+const DEFAULT_DISCOVERY_CACHE_MS = 1000;
+const DEFAULT_MANIFEST_CACHE_MS = 1000;
+
+function shouldUseWebSearchProviderSnapshotCache(env: NodeJS.ProcessEnv): boolean {
+  if (env.DIFFRACTION_DISABLE_PLUGIN_DISCOVERY_CACHE?.trim()) {
+    return false;
+  }
+  if (env.DIFFRACTION_DISABLE_PLUGIN_MANIFEST_CACHE?.trim()) {
+    return false;
+  }
+  const discoveryCacheMs = env.DIFFRACTION_PLUGIN_DISCOVERY_CACHE_MS?.trim();
+  if (discoveryCacheMs === "0") {
+    return false;
+  }
+  const manifestCacheMs = env.DIFFRACTION_PLUGIN_MANIFEST_CACHE_MS?.trim();
+  if (manifestCacheMs === "0") {
+    return false;
+  }
+  return true;
+}
+
+function resolveWebSearchProviderSnapshotCacheTtlMs(env: NodeJS.ProcessEnv): number {
+  const discoveryCacheMs = resolveCacheMs(
+    env.DIFFRACTION_PLUGIN_DISCOVERY_CACHE_MS,
+    DEFAULT_DISCOVERY_CACHE_MS,
+  );
+  const manifestCacheMs = resolveCacheMs(
+    env.DIFFRACTION_PLUGIN_MANIFEST_CACHE_MS,
+    DEFAULT_MANIFEST_CACHE_MS,
+  );
+  return Math.min(discoveryCacheMs, manifestCacheMs);
+}
+
+function resolveCacheMs(rawValue: string | undefined, defaultMs: number): number {
+  const raw = rawValue?.trim();
+  if (raw === "" || raw === "0") {
+    return 0;
+  }
+  if (!raw) {
+    return defaultMs;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) {
+    return defaultMs;
+  }
+  return Math.max(0, parsed);
+}
+
+function buildWebSearchSnapshotCacheKey(params: {
+  config?: DiffractionConfig;
+  workspaceDir?: string;
+  bundledAllowlistCompat?: boolean;
+  env: NodeJS.ProcessEnv;
+}): string {
+  const effectiveVitest = params.env.VITEST ?? process.env.VITEST ?? "";
+  return JSON.stringify({
+    workspaceDir: params.workspaceDir ?? "",
+    bundledAllowlistCompat: params.bundledAllowlistCompat === true,
+    config: params.config ?? null,
+    env: {
+      DIFFRACTION_BUNDLED_PLUGINS_DIR: params.env.DIFFRACTION_BUNDLED_PLUGINS_DIR ?? "",
+      DIFFRACTION_DISABLE_PLUGIN_DISCOVERY_CACHE:
+        params.env.DIFFRACTION_DISABLE_PLUGIN_DISCOVERY_CACHE ?? "",
+      DIFFRACTION_DISABLE_PLUGIN_MANIFEST_CACHE:
+        params.env.DIFFRACTION_DISABLE_PLUGIN_MANIFEST_CACHE ?? "",
+      DIFFRACTION_PLUGIN_DISCOVERY_CACHE_MS: params.env.DIFFRACTION_PLUGIN_DISCOVERY_CACHE_MS ?? "",
+      DIFFRACTION_PLUGIN_MANIFEST_CACHE_MS: params.env.DIFFRACTION_PLUGIN_MANIFEST_CACHE_MS ?? "",
+      DIFFRACTION_HOME: params.env.DIFFRACTION_HOME ?? "",
+      DIFFRACTION_STATE_DIR: params.env.DIFFRACTION_STATE_DIR ?? "",
+      DIFFRACTION_CONFIG_PATH: params.env.DIFFRACTION_CONFIG_PATH ?? "",
+      HOME: params.env.HOME ?? "",
+      USERPROFILE: params.env.USERPROFILE ?? "",
+      VITEST: effectiveVitest,
+    },
+  });
+}
+
+export function resolvePluginWebSearchProviders(params: {
+  config?: PluginLoadOptions["config"];
+  workspaceDir?: string;
+  env?: PluginLoadOptions["env"];
+  bundledAllowlistCompat?: boolean;
+  activate?: boolean;
+  cache?: boolean;
+}): PluginWebSearchProviderEntry[] {
+  const env = params.env ?? process.env;
+  const cacheOwnerConfig = params.config;
+  const shouldMemoizeSnapshot =
+    params.activate !== true &&
+    params.cache !== true &&
+    shouldUseWebSearchProviderSnapshotCache(env);
+  const cacheKey = buildWebSearchSnapshotCacheKey({
+    config: cacheOwnerConfig,
+    workspaceDir: params.workspaceDir,
+    bundledAllowlistCompat: params.bundledAllowlistCompat,
+    env,
+  });
+  if (cacheOwnerConfig && shouldMemoizeSnapshot) {
+    const configCache = webSearchProviderSnapshotCache.get(cacheOwnerConfig);
+    const envCache = configCache?.get(env);
+    const cached = envCache?.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.providers;
+    }
+  }
+  const { config } = resolveBundledWebSearchResolutionConfig({
+    ...params,
+    env,
+  });
+  const registry = loadDiffractionPlugins({
+    config,
+    workspaceDir: params.workspaceDir,
+    env,
+    cache: params.cache ?? false,
+    activate: params.activate ?? false,
+    logger: createPluginLoaderLogger(log),
+  });
+
+  const resolved = sortWebSearchProviders(
+    registry.webSearchProviders.map((entry) => ({
+      ...entry.provider,
+      pluginId: entry.pluginId,
+    })),
+  );
+  if (cacheOwnerConfig && shouldMemoizeSnapshot) {
+    const ttlMs = resolveWebSearchProviderSnapshotCacheTtlMs(env);
+    let configCache = webSearchProviderSnapshotCache.get(cacheOwnerConfig);
+    if (!configCache) {
+      configCache = new WeakMap<
+        NodeJS.ProcessEnv,
+        Map<string, WebSearchProviderSnapshotCacheEntry>
+      >();
+      webSearchProviderSnapshotCache.set(cacheOwnerConfig, configCache);
+    }
+    let envCache = configCache.get(env);
+    if (!envCache) {
+      envCache = new Map<string, WebSearchProviderSnapshotCacheEntry>();
+      configCache.set(env, envCache);
+    }
+    envCache.set(cacheKey, {
+      expiresAt: Date.now() + ttlMs,
+      providers: resolved,
+    });
+  }
+  return resolved;
+}
+
+export function resolveRuntimeWebSearchProviders(params: {
+  config?: PluginLoadOptions["config"];
+  workspaceDir?: string;
+  env?: PluginLoadOptions["env"];
+  bundledAllowlistCompat?: boolean;
+}): PluginWebSearchProviderEntry[] {
+  const runtimeProviders = getActivePluginRegistry()?.webSearchProviders ?? [];
+  if (runtimeProviders.length > 0) {
+    return sortWebSearchProviders(
+      runtimeProviders.map((entry) => ({
+        ...entry.provider,
+        pluginId: entry.pluginId,
+      })),
+    );
+  }
+  return resolvePluginWebSearchProviders(params);
+}

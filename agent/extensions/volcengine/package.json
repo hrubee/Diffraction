@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/volcengine-provider",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction Volcengine provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-const HOST_GATEWAY_URL = "http://host.openshell.internal";
+const HOST_GATEWAY_URL = "http://host.diffract.internal";
 const CONTAINER_REACHABILITY_IMAGE = "curlimages/curl:8.10.1";
 const DEFAULT_OLLAMA_MODEL = "nemotron-3-nano:30b";
 
@@ -30,9 +30,9 @@ function getLocalProviderHealthCheck(provider) {
 function getLocalProviderContainerReachabilityCheck(provider) {
   switch (provider) {
     case "vllm-local":
-      return `docker run --rm --add-host host.openshell.internal:host-gateway ${CONTAINER_REACHABILITY_IMAGE} -sf http://host.openshell.internal:8000/v1/models 2>/dev/null`;
+      return `docker run --rm --add-host host.diffract.internal:host-gateway ${CONTAINER_REACHABILITY_IMAGE} -sf http://host.diffract.internal:8000/v1/models 2>/dev/null`;
     case "ollama-local":
-      return `docker run --rm --add-host host.openshell.internal:host-gateway ${CONTAINER_REACHABILITY_IMAGE} -sf http://host.openshell.internal:11434/api/tags 2>/dev/null`;
+      return `docker run --rm --add-host host.diffract.internal:host-gateway ${CONTAINER_REACHABILITY_IMAGE} -sf http://host.diffract.internal:11434/api/tags 2>/dev/null`;
     default:
       return null;
   }
@@ -77,13 +77,13 @@ function validateLocalProvider(provider, runCapture) {
       return {
         ok: false,
         message:
-          "Local vLLM is responding on localhost, but containers cannot reach http://host.openshell.internal:8000. Ensure the server is reachable from containers, not only from the host shell.",
+          "Local vLLM is responding on localhost, but containers cannot reach http://host.diffract.internal:8000. Ensure the server is reachable from containers, not only from the host shell.",
       };
     case "ollama-local":
       return {
         ok: false,
         message:
-          "Local Ollama is responding on localhost, but containers cannot reach http://host.openshell.internal:11434. Ensure Ollama listens on 0.0.0.0:11434 instead of 127.0.0.1 so sandboxes can reach it.",
+          "Local Ollama is responding on localhost, but containers cannot reach http://host.diffract.internal:11434. Ensure Ollama listens on 0.0.0.0:11434 instead of 127.0.0.1 so sandboxes can reach it.",
       };
     default:
       return { ok: false, message: "The selected local inference provider is unavailable from containers." };

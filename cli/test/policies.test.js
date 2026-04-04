@@ -68,7 +68,7 @@ describe("policies", () => {
   describe("buildPolicySetCommand", () => {
     it("quotes sandbox name to prevent argument splitting", () => {
       const cmd = policies.buildPolicySetCommand("/tmp/policy.yaml", "my-assistant");
-      assert.equal(cmd, 'openshell policy set --policy "/tmp/policy.yaml" --wait "my-assistant"');
+      assert.equal(cmd, 'diffract policy set --policy "/tmp/policy.yaml" --wait "my-assistant"');
     });
 
     it("handles sandbox names with spaces", () => {
@@ -87,7 +87,7 @@ describe("policies", () => {
   describe("buildPolicyGetCommand", () => {
     it("quotes sandbox name", () => {
       const cmd = policies.buildPolicyGetCommand("my-assistant");
-      assert.equal(cmd, 'openshell policy get --full "my-assistant" 2>/dev/null');
+      assert.equal(cmd, 'diffract policy get --full "my-assistant" 2>/dev/null');
     });
   });
 

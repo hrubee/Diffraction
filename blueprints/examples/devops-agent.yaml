@@ -1,0 +1,25 @@
+# DevOps agent blueprint — infrastructure and CI/CD automation
+name: devops-agent
+description: "DevOps automation agent with cloud, container, and project management access"
+
+inference:
+  model: "nvidia/nemotron-3-super-120b-a12b"
+
+policy:
+  presets:
+    - github
+    - docker
+    - npm
+    - pypi
+    - jira
+    - slack
+
+extensions:
+  - slack
+
+skills:
+  - coding-agent
+
+env:
+  GITHUB_TOKEN_ENV: GITHUB_TOKEN
+  JIRA_API_TOKEN_ENV: JIRA_API_TOKEN

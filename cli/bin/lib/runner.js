@@ -6,7 +6,8 @@ const path = require("path");
 const { detectDockerHost } = require("./platform");
 
 const ROOT = path.resolve(__dirname, "..", "..");
-const SCRIPTS = path.join(ROOT, "scripts");
+const PROJECT_ROOT = path.resolve(ROOT, "..");
+const SCRIPTS = path.join(PROJECT_ROOT, "scripts");
 
 const dockerHost = detectDockerHost();
 if (dockerHost) {
@@ -58,4 +59,4 @@ function runCapture(cmd, opts = {}) {
   }
 }
 
-module.exports = { ROOT, SCRIPTS, run, runCapture, runInteractive };
+module.exports = { ROOT, PROJECT_ROOT, SCRIPTS, run, runCapture, runInteractive };

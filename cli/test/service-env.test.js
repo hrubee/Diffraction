@@ -4,27 +4,27 @@
 const { describe, it } = require("node:test");
 const assert = require("node:assert/strict");
 const { execSync } = require("child_process");
-const { resolveOpenshell } = require("../bin/lib/resolve-openshell");
+const { resolveOpenshell } = require("../bin/lib/resolve-diffract");
 
 describe("service environment", () => {
   describe("resolveOpenshell logic", () => {
     it("returns command -v result when absolute path", () => {
       assert.equal(
-        resolveOpenshell({ commandVResult: "/usr/bin/openshell" }),
-        "/usr/bin/openshell"
+        resolveOpenshell({ commandVResult: "/usr/bin/diffract" }),
+        "/usr/bin/diffract"
       );
     });
 
     it("rejects non-absolute command -v result (alias)", () => {
       assert.equal(
-        resolveOpenshell({ commandVResult: "openshell", checkExecutable: () => false }),
+        resolveOpenshell({ commandVResult: "diffract", checkExecutable: () => false }),
         null
       );
     });
 
     it("rejects alias definition from command -v", () => {
       assert.equal(
-        resolveOpenshell({ commandVResult: "alias openshell='echo pwned'", checkExecutable: () => false }),
+        resolveOpenshell({ commandVResult: "alias diffract='echo pwned'", checkExecutable: () => false }),
         null
       );
     });
@@ -33,10 +33,10 @@ describe("service environment", () => {
       assert.equal(
         resolveOpenshell({
           commandVResult: null,
-          checkExecutable: (p) => p === "/fakehome/.local/bin/openshell",
+          checkExecutable: (p) => p === "/fakehome/.local/bin/diffract",
           home: "/fakehome",
         }),
-        "/fakehome/.local/bin/openshell"
+        "/fakehome/.local/bin/diffract"
       );
     });
 
@@ -44,9 +44,9 @@ describe("service environment", () => {
       assert.equal(
         resolveOpenshell({
           commandVResult: null,
-          checkExecutable: (p) => p === "/usr/local/bin/openshell",
+          checkExecutable: (p) => p === "/usr/local/bin/diffract",
         }),
-        "/usr/local/bin/openshell"
+        "/usr/local/bin/diffract"
       );
     });
 
@@ -54,9 +54,9 @@ describe("service environment", () => {
       assert.equal(
         resolveOpenshell({
           commandVResult: null,
-          checkExecutable: (p) => p === "/usr/bin/openshell",
+          checkExecutable: (p) => p === "/usr/bin/diffract",
         }),
-        "/usr/bin/openshell"
+        "/usr/bin/diffract"
       );
     });
 
@@ -64,14 +64,14 @@ describe("service environment", () => {
       assert.equal(
         resolveOpenshell({
           commandVResult: null,
-          checkExecutable: (p) => p === "/fakehome/.local/bin/openshell" || p === "/usr/local/bin/openshell",
+          checkExecutable: (p) => p === "/fakehome/.local/bin/diffract" || p === "/usr/local/bin/diffract",
           home: "/fakehome",
         }),
-        "/fakehome/.local/bin/openshell"
+        "/fakehome/.local/bin/diffract"
       );
     });
 
-    it("returns null when openshell not found anywhere", () => {
+    it("returns null when diffract not found anywhere", () => {
       assert.equal(
         resolveOpenshell({
           commandVResult: null,

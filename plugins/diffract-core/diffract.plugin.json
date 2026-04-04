@@ -1,0 +1,32 @@
+{
+  "id": "diffract",
+  "name": "Diffract",
+  "version": "0.1.0",
+  "description": "Migrate and run Diffract inside OpenShell with optional NIM-backed inference",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "blueprintVersion": {
+        "type": "string",
+        "description": "Pinned blueprint artifact version (e.g., '0.1.0'). Omit for latest.",
+        "default": "latest"
+      },
+      "blueprintRegistry": {
+        "type": "string",
+        "description": "OCI registry or GitHub release URL for blueprint artifacts",
+        "default": "ghcr.io/nvidia/diffract-blueprint"
+      },
+      "sandboxName": {
+        "type": "string",
+        "description": "Name for the Diffract sandbox in OpenShell",
+        "default": "diffract"
+      },
+      "inferenceProvider": {
+        "type": "string",
+        "description": "Default inference provider type (nvidia, vllm, openai-compatible)",
+        "default": "nvidia"
+      }
+    },
+    "additionalProperties": false
+  }
+}

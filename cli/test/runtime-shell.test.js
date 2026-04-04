@@ -32,7 +32,7 @@ describe("shell runtime helpers", () => {
   });
 
   it("prefers Colima over Docker Desktop", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-runtime-shell-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-runtime-shell-"));
     const colimaSocket = path.join(home, ".colima/default/docker.sock");
     const dockerDesktopSocket = path.join(home, ".docker/run/docker.sock");
 
@@ -47,7 +47,7 @@ describe("shell runtime helpers", () => {
   });
 
   it("detects Docker Desktop when Colima is absent", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-runtime-shell-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-runtime-shell-"));
     const dockerDesktopSocket = path.join(home, ".docker/run/docker.sock");
 
     const result = runShell(`source "${RUNTIME_SH}"; detect_docker_host`, {
@@ -70,24 +70,24 @@ describe("shell runtime helpers", () => {
   it("selects the matching gateway cluster when a gateway name is present", () => {
     const result = runShell(
       `source "${RUNTIME_SH}";
-       select_openshell_cluster_container "diffraction" $'openshell-cluster-alpha\\nopenshell-cluster-diffraction'`,
+       select_diffract_cluster_container "diffract" $'diffract-cluster-alpha\\ndiffract-cluster-diffract'`,
     );
 
     assert.equal(result.status, 0);
-    assert.equal(result.stdout.trim(), "openshell-cluster-diffraction");
+    assert.equal(result.stdout.trim(), "diffract-cluster-diffract");
   });
 
   it("fails on ambiguous cluster selection", () => {
     const result = runShell(
       `source "${RUNTIME_SH}";
-       select_openshell_cluster_container "" $'openshell-cluster-a\\nopenshell-cluster-b'`,
+       select_diffract_cluster_container "" $'diffract-cluster-a\\ndiffract-cluster-b'`,
     );
 
     assert.notEqual(result.status, 0);
   });
 
   it("finds the XDG Colima socket", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-runtime-shell-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-runtime-shell-"));
     const xdgColimaSocket = path.join(home, ".config/colima/default/docker.sock");
 
     const result = runShell(`source "${RUNTIME_SH}"; find_colima_docker_socket`, {
@@ -119,13 +119,13 @@ describe("shell runtime helpers", () => {
   it("returns the vllm-local base URL", () => {
     const result = runShell(`source "${RUNTIME_SH}"; get_local_provider_base_url vllm-local`);
     assert.equal(result.status, 0);
-    assert.equal(result.stdout.trim(), "http://host.openshell.internal:8000/v1");
+    assert.equal(result.stdout.trim(), "http://host.diffract.internal:8000/v1");
   });
 
   it("returns the ollama-local base URL", () => {
     const result = runShell(`source "${RUNTIME_SH}"; get_local_provider_base_url ollama-local`);
     assert.equal(result.status, 0);
-    assert.equal(result.stdout.trim(), "http://host.openshell.internal:11434/v1");
+    assert.equal(result.stdout.trim(), "http://host.diffract.internal:11434/v1");
   });
 
   it("rejects unknown local providers", () => {
@@ -178,7 +178,7 @@ describe("shell runtime helpers", () => {
       `function colima() { cat > /dev/null || true; printf 'nameserver 100.100.100.100\\n'; }
        source "${RUNTIME_SH}"
        printf 'sandbox-answer\\n' | {
-         get_colima_vm_nameserver > /tmp/diffraction-colima-ns.out
+         get_colima_vm_nameserver > /tmp/diffract-colima-ns.out
          cat
        }`,
     );

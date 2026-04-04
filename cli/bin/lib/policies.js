@@ -6,10 +6,10 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { ROOT, run, runCapture } = require("./runner");
+const { ROOT, PROJECT_ROOT, run, runCapture } = require("./runner");
 const registry = require("./registry");
 
-const PRESETS_DIR = path.join(ROOT, "diffraction-blueprint", "policies", "presets");
+const PRESETS_DIR = path.join(PROJECT_ROOT, "policies", "presets");
 
 function listPresets() {
   if (!fs.existsSync(PRESETS_DIR)) return [];
@@ -166,7 +166,7 @@ function applyPreset(sandboxName, presetName) {
   }
 
   // Write temp file and apply
-  const tmpFile = path.join(os.tmpdir(), `diffraction-policy-${Date.now()}.yaml`);
+  const tmpFile = path.join(os.tmpdir(), `diffract-policy-${Date.now()}.yaml`);
   fs.writeFileSync(tmpFile, merged, "utf-8");
 
   try {

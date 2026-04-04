@@ -1,0 +1,1 @@
+First App Store release of Diffraction for iPhone. Pair with your Diffraction Gateway to use chat, voice, sharing, and device actions from iOS.

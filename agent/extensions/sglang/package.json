@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/sglang-provider",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction SGLang provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

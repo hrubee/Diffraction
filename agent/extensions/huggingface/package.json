@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/huggingface-provider",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction Hugging Face provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

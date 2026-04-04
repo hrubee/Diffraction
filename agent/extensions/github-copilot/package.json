@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/github-copilot-provider",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction GitHub Copilot provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

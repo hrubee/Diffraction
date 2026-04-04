@@ -1,0 +1,25 @@
+{
+  "name": "@diffraction/memory-lancedb",
+  "version": "2026.3.22",
+  "description": "Diffraction LanceDB-backed long-term memory plugin with auto-recall/capture",
+  "type": "module",
+  "dependencies": {
+    "@lancedb/lancedb": "^0.27.1",
+    "@sinclair/typebox": "0.34.48",
+    "openai": "^6.32.0"
+  },
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "install": {
+      "npmSpec": "@diffraction/memory-lancedb",
+      "localPath": "extensions/memory-lancedb",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.3.22"
+    },
+    "release": {
+      "publishToNpm": true
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/copilot-proxy",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction Copilot Proxy provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

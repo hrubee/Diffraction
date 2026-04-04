@@ -1,0 +1,49 @@
+{
+  "name": "@diffraction/msteams",
+  "version": "2026.3.22",
+  "description": "Diffraction Microsoft Teams channel plugin",
+  "type": "module",
+  "dependencies": {
+    "@microsoft/agents-hosting": "^1.4.1",
+    "express": "^5.2.1",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "diffraction": "workspace:*"
+  },
+  "peerDependencies": {
+    "diffraction": ">=2026.3.22"
+  },
+  "peerDependenciesMeta": {
+    "diffraction": {
+      "optional": true
+    }
+  },
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "msteams",
+      "label": "Microsoft Teams",
+      "selectionLabel": "Microsoft Teams (Bot Framework)",
+      "docsPath": "/channels/msteams",
+      "docsLabel": "msteams",
+      "blurb": "Bot Framework; enterprise support.",
+      "aliases": [
+        "teams"
+      ],
+      "order": 60
+    },
+    "install": {
+      "npmSpec": "@diffraction/msteams",
+      "localPath": "extensions/msteams",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.3.22"
+    },
+    "release": {
+      "publishToNpm": true
+    }
+  }
+}

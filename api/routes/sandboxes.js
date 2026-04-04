@@ -30,12 +30,44 @@ router.get("/:name", async (req, res) => {
   }
 });
 
-// POST /api/sandboxes — create a new sandbox
+// POST /api/sandboxes — create a new sandbox via diffract onboard (non-interactive)
+// This runs the full 8-step onboard: gateway check, sandbox create, browser install,
+// inference config, OpenClaw setup + gateway start, policy presets.
 router.post("/", async (req, res) => {
   try {
     const { name, spec } = req.body;
-    const data = await grpcCall("CreateSandbox", { name, spec }, 60_000);
-    res.status(201).json(data.sandbox || null);
+    const sandboxName = (name || "my-assistant").trim();
+    const provider = spec?.provider || "cloud";
+    const model = spec?.model || "nvidia/nemotron-3-super-120b-a12b";
+
+    // Run diffract onboard non-interactively
+    // This handles everything: sandbox creation, browser install, gateway start, policies
+    const env = [
+      `DIFFRACTION_NON_INTERACTIVE=1`,
+      `DIFFRACTION_SANDBOX_NAME=${sandboxName}`,
+      `DIFFRACTION_PROVIDER=${provider}`,
+      `DIFFRACTION_MODEL=${model}`,
+    ].join(" ");
+
+    const cmd = `export PATH="$PATH:$HOME/.local/bin"; export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; cd /root/diffract && ${env} node cli/bin/diffract.js onboard --non-interactive 2>&1`;
+
+    // Onboard can take several minutes — run async and return immediately with status
+    const { spawn: spawnProc } = await import("child_process");
+    const logFile = `/tmp/diffract-onboard-${sandboxName}.log`;
+
+    const child = spawnProc("bash", ["-c", `${cmd} > ${logFile} 2>&1`], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+
+    // Return immediately — the UI can poll sandbox status
+    res.status(202).json({
+      name: sandboxName,
+      status: "provisioning",
+      message: "Sandbox creation started. This takes 3-5 minutes. Check the sandbox detail page for status.",
+      logFile,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

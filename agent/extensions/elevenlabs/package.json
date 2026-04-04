@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/elevenlabs-speech",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction ElevenLabs speech plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

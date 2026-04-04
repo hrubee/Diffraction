@@ -21,6 +21,7 @@ export default function SandboxDetailPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
+  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -69,6 +70,27 @@ export default function SandboxDetailPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold">{name}</h1>
           {sandbox && <StatusBadge phase={sandbox.phase} />}
+          <button
+            onClick={async () => {
+              setRestarting(true);
+              try {
+                const r = await fetch(`/api/sandboxes/${encodeURIComponent(name)}/restart-gateway`, { method: "POST" });
+                const data = await r.json();
+                if (data.healthy) {
+                  setError(null);
+                } else {
+                  setError("Gateway restarted but not healthy yet — check logs");
+                }
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Restart failed");
+              }
+              setRestarting(false);
+            }}
+            disabled={restarting}
+            className="ml-auto px-3 py-1.5 text-xs bg-zinc-800 text-zinc-400 border border-zinc-700 rounded-md hover:text-white hover:border-zinc-500 disabled:opacity-50"
+          >
+            {restarting ? "Restarting..." : "Restart Gateway"}
+          </button>
         </div>
       </div>
 

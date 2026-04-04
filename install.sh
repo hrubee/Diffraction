@@ -149,8 +149,9 @@ echo "  [4/8] Checking OpenShell CLI..."
 export PATH="$PATH:$HOME/.local/bin"
 
 if ! command_exists openshell; then
-  echo "  Installing OpenShell CLI..."
-  curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+  echo "  Installing OpenShell CLI (v0.0.21 — v0.0.22 has port forward regression)..."
+  # Pin to v0.0.21: v0.0.22 SSH port forwarding returns empty replies
+  OPENSHELL_VERSION="0.0.21" curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
   export PATH="$PATH:$HOME/.local/bin"
 
   # Persist PATH

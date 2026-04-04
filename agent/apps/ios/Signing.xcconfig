@@ -1,0 +1,22 @@
+// Default signing values for shared/repo builds.
+// Auto-selected local team overrides live in .local-signing.xcconfig (git-ignored).
+// Manual local overrides can go in LocalSigning.xcconfig (git-ignored).
+
+#include "Config/Version.xcconfig"
+
+DIFFRACTION_CODE_SIGN_STYLE = Manual
+DIFFRACTION_DEVELOPMENT_TEAM = Y5PE65HELJ
+
+DIFFRACTION_APP_BUNDLE_ID = ai.diffraction.client
+DIFFRACTION_SHARE_BUNDLE_ID = ai.diffraction.client.share
+DIFFRACTION_WATCH_APP_BUNDLE_ID = ai.diffraction.client.watchkitapp
+DIFFRACTION_WATCH_EXTENSION_BUNDLE_ID = ai.diffraction.client.watchkitapp.extension
+DIFFRACTION_ACTIVITY_WIDGET_BUNDLE_ID = ai.diffraction.client.activitywidget
+
+DIFFRACTION_APP_PROFILE = ai.diffraction.client Development
+DIFFRACTION_SHARE_PROFILE = ai.diffraction.client.share Development
+
+// Keep local includes after defaults: xcconfig is evaluated top-to-bottom,
+// so later assignments in local files override the defaults above.
+#include? ".local-signing.xcconfig"
+#include? "LocalSigning.xcconfig"

@@ -1,24 +1,23 @@
 {
-  "name": "diffraction",
+  "name": "diffract",
   "version": "0.1.0",
-  "description": "Diffraction — Enterprise AI Agent Framework unifying autonomous agent runtime, secure sandbox execution, and orchestration",
+  "description": "Diffract — Deploy safe, autonomous AI agents with one command",
   "license": "Apache-2.0",
   "private": true,
   "engines": {
     "node": ">=20.0.0"
   },
   "scripts": {
-    "start":     "node cli/bin/diffraction.js",
-    "onboard":   "node cli/bin/diffraction.js onboard",
-    "setup":     "node cli/bin/diffraction.js setup",
-    "status":    "node cli/bin/diffraction.js status",
-    "stop":      "node cli/bin/diffraction.js stop",
-    "list":      "node cli/bin/diffraction.js list",
-    "uninstall": "node cli/bin/diffraction.js uninstall",
+    "start":     "node cli/bin/diffract.js",
+    "init":      "node cli/bin/diffract.js init",
+    "status":    "node cli/bin/diffract.js status",
+    "stop":      "node cli/bin/diffract.js stop",
+    "list":      "node cli/bin/diffract.js list",
+    "uninstall": "node cli/bin/diffract.js uninstall",
     "postinstall": "cd cli && npm install --omit=dev --ignore-scripts"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/hrubee/Diffraction.git"
+    "url": "https://github.com/hrubee/Diffract.git"
   }
 }

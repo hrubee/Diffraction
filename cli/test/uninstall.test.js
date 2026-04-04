@@ -14,7 +14,7 @@ describe("uninstall helpers", () => {
   it("returns the expected gateway volume candidate", () => {
     const result = spawnSync(
       "bash",
-      ["-lc", `source "${UNINSTALL_SCRIPT}"; gateway_volume_candidates diffraction`],
+      ["-lc", `source "${UNINSTALL_SCRIPT}"; gateway_volume_candidates diffract`],
       {
         cwd: path.join(__dirname, ".."),
         encoding: "utf-8",
@@ -22,19 +22,19 @@ describe("uninstall helpers", () => {
     );
 
     assert.equal(result.status, 0);
-    assert.equal(result.stdout.trim(), "openshell-cluster-diffraction");
+    assert.equal(result.stdout.trim(), "diffract-cluster-diffract");
   });
 
-  it("removes the user-local diffraction shim", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-uninstall-shim-"));
+  it("removes the user-local diffract shim", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-uninstall-shim-"));
     const shimDir = path.join(tmp, ".local", "bin");
-    const shimPath = path.join(shimDir, "diffraction");
+    const shimPath = path.join(shimDir, "diffract");
     fs.mkdirSync(shimDir, { recursive: true });
     fs.writeFileSync(shimPath, "#!/usr/bin/env bash\n", { mode: 0o755 });
 
     const result = spawnSync(
       "bash",
-      ["-lc", `HOME="${tmp}" source "${UNINSTALL_SCRIPT}"; remove_diffraction_cli`],
+      ["-lc", `HOME="${tmp}" source "${UNINSTALL_SCRIPT}"; remove_diffract_cli`],
       {
         cwd: path.join(__dirname, ".."),
         encoding: "utf-8",

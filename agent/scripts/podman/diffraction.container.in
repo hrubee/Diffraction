@@ -1,0 +1,28 @@
+# Diffraction gateway — Podman Quadlet (rootless)
+# Installed by scripts/podman/setup.sh into diffraction's ~/.config/containers/systemd/
+# {{DIFFRACTION_HOME}} is replaced at install time.
+
+[Unit]
+Description=Diffraction gateway (rootless Podman)
+
+[Container]
+Image=diffraction:local
+ContainerName=diffraction
+UserNS=keep-id
+# Keep container UID/GID aligned with the invoking user so mounted config is readable.
+User=%U:%G
+Volume={{DIFFRACTION_HOME}}/.diffraction:/home/node/.diffraction:Z
+EnvironmentFile={{DIFFRACTION_HOME}}/.diffraction/.env
+Environment=HOME=/home/node
+Environment=TERM=xterm-256color
+PublishPort=18789:18789
+PublishPort=18790:18790
+Pull=never
+Exec=node dist/index.js gateway --bind lan --port 18789
+
+[Service]
+TimeoutStartSec=300
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

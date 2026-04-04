@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/kilocode-provider",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction Kilo Gateway provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

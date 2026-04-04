@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/cloudflare-ai-gateway-provider",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction Cloudflare AI Gateway provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

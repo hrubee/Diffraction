@@ -36,8 +36,8 @@ describe("nim", () => {
   });
 
   describe("containerName", () => {
-    it("prefixes with diffraction-nim-", () => {
-      assert.equal(nim.containerName("my-sandbox"), "diffraction-nim-my-sandbox");
+    it("prefixes with diffract-nim-", () => {
+      assert.equal(nim.containerName("my-sandbox"), "diffract-nim-my-sandbox");
     });
   });
 

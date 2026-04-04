@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: diffraction-config
+  labels:
+    app: diffraction
+data:
+  diffraction.json: |
+    {
+      "gateway": {
+        "mode": "local",
+        "bind": "loopback",
+        "port": 18789,
+        "auth": {
+          "mode": "token"
+        },
+        "controlUi": {
+          "enabled": true
+        }
+      },
+      "agents": {
+        "defaults": {
+          "workspace": "~/.diffraction/workspace"
+        },
+        "list": [
+          {
+            "id": "default",
+            "name": "Diffraction Assistant",
+            "workspace": "~/.diffraction/workspace"
+          }
+        ]
+      },
+      "cron": { "enabled": false }
+    }
+  AGENTS.md: |
+    # Diffraction Assistant
+
+    You are a helpful AI assistant running in Kubernetes.

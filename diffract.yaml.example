@@ -1,0 +1,65 @@
+# diffract.yaml — Diffract configuration
+# Copy this file to diffract.yaml and customize for your environment.
+
+version: 1
+
+# Gateway settings
+gateway:
+  listen: "127.0.0.1:9443"
+  data_dir: "~/.diffract"
+  log_level: info
+  tls:
+    auto: true                    # Auto-generate mTLS certificates
+    # Or bring your own:
+    # ca_cert: /path/to/ca.pem
+    # server_cert: /path/to/server.pem
+    # server_key: /path/to/server-key.pem
+
+# Inference providers
+providers:
+  nvidia-cloud:
+    type: nvidia
+    endpoint: "https://integrate.api.nvidia.com/v1"
+    api_key_env: NVIDIA_API_KEY   # Read from environment variable
+
+  local-ollama:
+    type: ollama
+    endpoint: "http://host.docker.internal:11434/v1"
+    # No API key needed
+
+  # anthropic:
+  #   type: anthropic
+  #   endpoint: "https://api.anthropic.com"
+  #   api_key_env: ANTHROPIC_API_KEY
+
+# Default inference route
+inference:
+  provider: nvidia-cloud
+  model: "nvidia/nemotron-3-super-120b-a12b"
+
+# Agent definitions
+agents:
+  my-agent:
+    blueprint: default              # References blueprints/default.yaml
+    # Override inference for this agent:
+    # inference:
+    #   provider: local-ollama
+    #   model: "llama3.1:8b"
+    policy:
+      presets:
+        - npm
+        - pypi
+    extensions: []
+    skills: []
+    # Environment variables injected into sandbox:
+    # env:
+    #   TELEGRAM_BOT_TOKEN_ENV: TELEGRAM_BOT_TOKEN
+
+# Enterprise features (optional)
+# enterprise:
+#   rbac:
+#     enabled: false
+#   audit:
+#     enabled: true
+#     format: ocsf
+#     output: stdout

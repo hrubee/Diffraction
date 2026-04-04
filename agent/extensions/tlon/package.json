@@ -1,0 +1,46 @@
+{
+  "name": "@diffraction/tlon",
+  "version": "2026.3.22",
+  "description": "Diffraction Tlon/Urbit channel plugin",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1014.0",
+    "@aws-sdk/s3-request-presigner": "3.1014.0",
+    "@tloncorp/tlon-skill": "0.3.0",
+    "@urbit/aura": "^3.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "diffraction": "workspace:*"
+  },
+  "peerDependencies": {
+    "diffraction": ">=2026.3.22"
+  },
+  "peerDependenciesMeta": {
+    "diffraction": {
+      "optional": true
+    }
+  },
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "setupEntry": "./setup-entry.ts",
+    "channel": {
+      "id": "tlon",
+      "label": "Tlon",
+      "selectionLabel": "Tlon (Urbit)",
+      "docsPath": "/channels/tlon",
+      "docsLabel": "tlon",
+      "blurb": "decentralized messaging on Urbit; install the plugin to enable.",
+      "order": 90,
+      "quickstartAllowFrom": true
+    },
+    "install": {
+      "npmSpec": "@diffraction/tlon",
+      "localPath": "extensions/tlon",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.3.22"
+    }
+  }
+}

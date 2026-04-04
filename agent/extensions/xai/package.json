@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/xai-plugin",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction xAI plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

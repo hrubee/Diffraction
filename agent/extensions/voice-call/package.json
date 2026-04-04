@@ -1,0 +1,34 @@
+{
+  "name": "@diffraction/voice-call",
+  "version": "2026.3.22",
+  "description": "Diffraction voice-call plugin",
+  "type": "module",
+  "dependencies": {
+    "@sinclair/typebox": "0.34.48",
+    "commander": "^14.0.3",
+    "ws": "^8.20.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "diffraction": "workspace:*"
+  },
+  "peerDependencies": {
+    "diffraction": ">=2026.3.22"
+  },
+  "peerDependenciesMeta": {
+    "diffraction": {
+      "optional": true
+    }
+  },
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ],
+    "install": {
+      "minHostVersion": ">=2026.3.22"
+    },
+    "release": {
+      "publishToNpm": true
+    }
+  }
+}

@@ -43,13 +43,13 @@ describe("checkPortAvailable", () => {
   it("parses process and PID from lsof output", async () => {
     const lsofOutput = [
       "COMMAND     PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME",
-      "diffraction  12345   root    7u  IPv4  54321      0t0  TCP *:18789 (LISTEN)",
+      "diffract  12345   root    7u  IPv4  54321      0t0  TCP *:18789 (LISTEN)",
     ].join("\n");
     const result = await checkPortAvailable(18789, { lsofOutput });
     assert.equal(result.ok, false);
-    assert.equal(result.process, "diffraction");
+    assert.equal(result.process, "diffract");
     assert.equal(result.pid, 12345);
-    assert.ok(result.reason.includes("diffraction"));
+    assert.ok(result.reason.includes("diffract"));
   });
 
   it("picks first listener when lsof shows multiple", async () => {

@@ -6,14 +6,14 @@ const assert = require("node:assert/strict");
 const { execSync } = require("child_process");
 const path = require("path");
 
-const CLI = path.join(__dirname, "..", "bin", "diffraction.js");
+const CLI = path.join(__dirname, "..", "bin", "diffract.js");
 
 function run(args) {
   try {
     const out = execSync(`node "${CLI}" ${args}`, {
       encoding: "utf-8",
       timeout: 10000,
-      env: { ...process.env, HOME: "/tmp/diffraction-cli-test-" + Date.now() },
+      env: { ...process.env, HOME: "/tmp/diffract-cli-test-" + Date.now() },
     });
     return { code: 0, out };
   } catch (err) {
@@ -41,7 +41,7 @@ describe("CLI dispatch", () => {
   it("no args exits 0 (shows help)", () => {
     const r = run("");
     assert.equal(r.code, 0);
-    assert.ok(r.out.includes("diffraction"));
+    assert.ok(r.out.includes("diffract"));
   });
 
   it("unknown command exits 1", () => {

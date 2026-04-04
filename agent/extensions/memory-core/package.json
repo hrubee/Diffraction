@@ -1,0 +1,23 @@
+{
+  "name": "@diffraction/memory-core",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction core memory search plugin",
+  "type": "module",
+  "devDependencies": {
+    "diffraction": "workspace:*"
+  },
+  "peerDependencies": {
+    "diffraction": ">=2026.3.22"
+  },
+  "peerDependenciesMeta": {
+    "diffraction": {
+      "optional": true
+    }
+  },
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

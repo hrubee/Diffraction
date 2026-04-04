@@ -7,7 +7,7 @@ const { run, runCapture } = require("./runner");
 const nimImages = require("./nim-images.json");
 
 function containerName(sandboxName) {
-  return `diffraction-nim-${sandboxName}`;
+  return `diffract-nim-${sandboxName}`;
 }
 
 function getImageForModel(modelName) {

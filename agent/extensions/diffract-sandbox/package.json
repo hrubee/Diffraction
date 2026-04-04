@@ -1,0 +1,12 @@
+{
+  "name": "@diffract/diffract-sandbox",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffract Diffract sandbox backend",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

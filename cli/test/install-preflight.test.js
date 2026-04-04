@@ -19,7 +19,7 @@ function writeExecutable(target, contents) {
 
 describe("installer runtime preflight", () => {
   it("fails fast with a clear message on unsupported Node.js and npm", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-install-preflight-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-install-preflight-"));
     const fakeBin = path.join(tmp, "bin");
     fs.mkdirSync(fakeBin);
 
@@ -66,7 +66,7 @@ exit 98
   });
 
   it("uses the HTTPS GitHub fallback when not installing from a repo checkout", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-install-fallback-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-install-fallback-"));
     const fakeBin = path.join(tmp, "bin");
     const prefix = path.join(tmp, "prefix");
     const npmLog = path.join(tmp, "npm.log");
@@ -99,7 +99,7 @@ if [ "$1" = "config" ] && [ "$2" = "get" ] && [ "$3" = "prefix" ]; then
   exit 0
 fi
 if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "${GITHUB_INSTALL_URL}" ]; then
-  cat > "$NPM_PREFIX/bin/diffraction" <<'EOS'
+  cat > "$NPM_PREFIX/bin/diffract" <<'EOS'
 #!/usr/bin/env bash
 if [ "$1" = "onboard" ]; then
   exit 0
@@ -110,7 +110,7 @@ if [ "$1" = "--version" ]; then
 fi
 exit 0
 EOS
-  chmod +x "$NPM_PREFIX/bin/diffraction"
+  chmod +x "$NPM_PREFIX/bin/diffract"
   exit 0
 fi
 echo "unexpected npm invocation: $*" >&2
@@ -136,7 +136,7 @@ exit 98
   });
 
   it("prints the HTTPS GitHub remediation when the binary is missing", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-install-remediation-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-install-remediation-"));
     const fakeBin = path.join(tmp, "bin");
     const prefix = path.join(tmp, "prefix");
     fs.mkdirSync(fakeBin);
@@ -189,11 +189,11 @@ exit 98
     const output = `${result.stdout}${result.stderr}`;
     assert.notEqual(result.status, 0);
     assert.match(output, new RegExp(GITHUB_INSTALL_URL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-    assert.doesNotMatch(output, /npm install -g diffraction/);
+    assert.doesNotMatch(output, /npm install -g diffract/);
   });
 
   it("does not silently prefer Colima when both macOS runtimes are available", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-macos-runtime-choice-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-macos-runtime-choice-"));
     const fakeBin = path.join(tmp, "bin");
     const colimaSocket = path.join(tmp, ".colima/default/docker.sock");
     const dockerDesktopSocket = path.join(tmp, ".docker/run/docker.sock");
@@ -273,7 +273,7 @@ echo "Darwin"
   });
 
   it("can run via stdin without a sibling runtime.sh file", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-curl-pipe-installer-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-curl-pipe-installer-"));
     const fakeBin = path.join(tmp, "bin");
     const prefix = path.join(tmp, "prefix");
     fs.mkdirSync(fakeBin);
@@ -303,7 +303,7 @@ if [ "$1" = "config" ] && [ "$2" = "get" ] && [ "$3" = "prefix" ]; then
   exit 0
 fi
 if [ "$1" = "install" ] && [ "$2" = "-g" ]; then
-  cat > "$NPM_PREFIX/bin/diffraction" <<'EOS'
+  cat > "$NPM_PREFIX/bin/diffract" <<'EOS'
 #!/usr/bin/env bash
 if [ "$1" = "--version" ]; then
   echo "v0.1.0-test"
@@ -311,7 +311,7 @@ if [ "$1" = "--version" ]; then
 fi
 exit 0
 EOS
-  chmod +x "$NPM_PREFIX/bin/diffraction"
+  chmod +x "$NPM_PREFIX/bin/diffract"
   exit 0
 fi
 echo "unexpected npm invocation: $*" >&2
@@ -330,10 +330,10 @@ exit 0
     );
 
     writeExecutable(
-      path.join(fakeBin, "openshell"),
+      path.join(fakeBin, "diffract"),
       `#!/usr/bin/env bash
 if [ "$1" = "--version" ]; then
-  echo "openshell 0.0.9"
+  echo "diffract 0.0.9"
   exit 0
 fi
 exit 0
@@ -357,11 +357,11 @@ exit 0
     const output = `${result.stdout}${result.stderr}`;
     assert.equal(result.status, 0);
     assert.match(output, /Installation complete!/);
-    assert.match(output, /diffraction v0\.1\.0-test is ready/);
+    assert.match(output, /diffract v0\.1\.0-test is ready/);
   });
 
   it("creates a user-local shim when npm installs outside the current PATH", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-install-shim-"));
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-install-shim-"));
     const fakeBin = path.join(tmp, "bin");
     const prefix = path.join(tmp, "prefix");
     fs.mkdirSync(fakeBin);
@@ -392,7 +392,7 @@ if [ "$1" = "config" ] && [ "$2" = "get" ] && [ "$3" = "prefix" ]; then
   exit 0
 fi
 if [ "$1" = "install" ] && [ "$2" = "-g" ] && [ "$3" = "${GITHUB_INSTALL_URL}" ]; then
-  cat > "$NPM_PREFIX/bin/diffraction" <<'EOS'
+  cat > "$NPM_PREFIX/bin/diffract" <<'EOS'
 #!/usr/bin/env bash
 if [ "$1" = "onboard" ]; then
   exit 0
@@ -403,7 +403,7 @@ if [ "$1" = "--version" ]; then
 fi
 exit 0
 EOS
-  chmod +x "$NPM_PREFIX/bin/diffraction"
+  chmod +x "$NPM_PREFIX/bin/diffract"
   exit 0
 fi
 echo "unexpected npm invocation: $*" >&2
@@ -422,10 +422,10 @@ exit 0
     );
 
     writeExecutable(
-      path.join(fakeBin, "openshell"),
+      path.join(fakeBin, "diffract"),
       `#!/usr/bin/env bash
 if [ "$1" = "--version" ]; then
-  echo "openshell 0.0.9"
+  echo "diffract 0.0.9"
   exit 0
 fi
 exit 0
@@ -444,9 +444,9 @@ exit 0
       },
     });
 
-    const shimPath = path.join(tmp, ".local", "bin", "diffraction");
+    const shimPath = path.join(tmp, ".local", "bin", "diffract");
     assert.equal(result.status, 0);
-    assert.equal(fs.readlinkSync(shimPath), path.join(prefix, "bin", "diffraction"));
+    assert.equal(fs.readlinkSync(shimPath), path.join(prefix, "bin", "diffract"));
     assert.match(`${result.stdout}${result.stderr}`, /Created user-local shim/);
   });
 });

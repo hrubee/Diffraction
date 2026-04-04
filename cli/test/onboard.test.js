@@ -18,10 +18,10 @@ describe("onboard helpers", () => {
       onboardedAt: "2026-03-18T12:00:00.000Z",
     });
 
-    assert.match(script, /cat > ~\/\.diffraction\/config\.json/);
+    assert.match(script, /cat > ~\/\.diffract\/config\.json/);
     assert.match(script, /"model": "nemotron-3-nano:30b"/);
     assert.match(script, /"credentialEnv": "OPENAI_API_KEY"/);
-    assert.match(script, /diffraction models set 'inference\/nemotron-3-nano:30b'/);
+    assert.match(script, /diffract models set 'inference\/nemotron-3-nano:30b'/);
     assert.match(script, /cfg\.setdefault\('agents', \{\}\)\.setdefault\('defaults', \{\}\)\.setdefault\('model', \{\}\)\['primary'\]/);
     assert.match(script, /providers_cfg\["inference"\]/);
     assert.match(script, /json\.loads\("\{\\\"baseUrl\\\":\\\"https:\/\/inference\.local\/v1\\\",\\\"apiKey\\\":\\\"unused\\\"/);

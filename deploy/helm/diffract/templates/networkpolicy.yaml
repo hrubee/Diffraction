@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if .Values.networkPolicy.enabled }}
+# NetworkPolicy restricting SSH ingress on sandbox pods to the gateway pod.
+# Sandbox pods are dynamically created by the server and labelled with
+# diffract.ai/managed-by=diffract. This policy ensures only the gateway
+# (diffract server) pod can reach the sandbox SSH port (2222), blocking
+# lateral movement from other in-cluster workloads.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "diffract.fullname" . }}-sandbox-ssh
+  namespace: {{ .Values.server.sandboxNamespace }}
+  labels:
+    {{- include "diffract.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      diffract.ai/managed-by: diffract
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "diffract.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 2222
+{{- end }}

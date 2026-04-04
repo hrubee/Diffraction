@@ -59,7 +59,7 @@ describe("macOS smoke install script guardrails", () => {
       env: {
         ...process.env,
         NVIDIA_API_KEY: "nvapi-test",
-        HOME: "/tmp/diffraction-smoke-no-runtime",
+        HOME: "/tmp/diffract-smoke-no-runtime",
       },
     });
 

@@ -1,0 +1,12 @@
+{
+  "name": "@diffraction/synthetic-provider",
+  "version": "2026.3.22",
+  "private": true,
+  "description": "Diffraction Synthetic provider plugin",
+  "type": "module",
+  "diffraction": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

@@ -23,14 +23,14 @@ describe("local inference helpers", () => {
   it("returns the expected base URL for vllm-local", () => {
     assert.equal(
       getLocalProviderBaseUrl("vllm-local"),
-      "http://host.openshell.internal:8000/v1",
+      "http://host.diffract.internal:8000/v1",
     );
   });
 
   it("returns the expected base URL for ollama-local", () => {
     assert.equal(
       getLocalProviderBaseUrl("ollama-local"),
-      "http://host.openshell.internal:11434/v1",
+      "http://host.diffract.internal:11434/v1",
     );
   });
 
@@ -44,7 +44,7 @@ describe("local inference helpers", () => {
   it("returns the expected container reachability command for ollama-local", () => {
     assert.equal(
       getLocalProviderContainerReachabilityCheck("ollama-local"),
-      `docker run --rm --add-host host.openshell.internal:host-gateway ${CONTAINER_REACHABILITY_IMAGE} -sf http://host.openshell.internal:11434/api/tags 2>/dev/null`,
+      `docker run --rm --add-host host.diffract.internal:host-gateway ${CONTAINER_REACHABILITY_IMAGE} -sf http://host.diffract.internal:11434/api/tags 2>/dev/null`,
     );
   });
 
@@ -71,7 +71,7 @@ describe("local inference helpers", () => {
       return callCount === 1 ? '{"models":[]}' : "";
     });
     assert.equal(result.ok, false);
-    assert.match(result.message, /host\.openshell\.internal:11434/);
+    assert.match(result.message, /host\.diffract\.internal:11434/);
     assert.match(result.message, /0\.0\.0\.0:11434/);
   });
 

@@ -7,13 +7,13 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-// Use a temp dir so tests don't touch real ~/.diffraction
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diffraction-test-"));
+// Use a temp dir so tests don't touch real ~/.diffract
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diffract-test-"));
 process.env.HOME = tmpDir;
 
 const registry = require("../bin/lib/registry");
 
-const regFile = path.join(tmpDir, ".diffraction", "sandboxes.json");
+const regFile = path.join(tmpDir, ".diffract", "sandboxes.json");
 
 beforeEach(() => {
   if (fs.existsSync(regFile)) fs.unlinkSync(regFile);
