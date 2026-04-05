@@ -42,5 +42,15 @@
 		"status": "active",
 		"createdAt": "2026-04-05T14:48:15.675Z",
 		"completedAt": null
+	},
+	{
+		"id": "group-338d5856",
+		"name": "watchdog-fix",
+		"memberIssueIds": [
+			"Diffraction-b497"
+		],
+		"status": "active",
+		"createdAt": "2026-04-05T17:29:36.016Z",
+		"completedAt": null
 	}
 ]
