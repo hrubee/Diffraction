@@ -48,7 +48,7 @@ export default function SkillsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/hub");
+      const res = await fetch("/api/hub", { credentials: "include" });
       if (res.ok) {
         setSkills(await res.json());
       } else {
@@ -68,6 +68,7 @@ export default function SkillsPage() {
     try {
       const res = await fetch("/api/hub/install", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source: installUrl.trim() }),
       });
@@ -89,7 +90,7 @@ export default function SkillsPage() {
     if (!confirm(`Remove skill '${name}'?`)) return;
     setRemoveError(null);
     try {
-      const res = await fetch(`/api/hub/${encodeURIComponent(name)}`, { method: "DELETE" });
+      const res = await fetch(`/api/hub/${encodeURIComponent(name)}`, { method: "DELETE", credentials: "include" });
       if (res.ok) {
         await loadSkills();
       } else {

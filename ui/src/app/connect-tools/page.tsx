@@ -175,7 +175,7 @@ export default function ConnectToolsPage() {
 
   const loadStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/mcp/zapier");
+      const res = await fetch("/api/mcp/zapier", { credentials: "include" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: ZapierStatus = await res.json();
       setStatus(data);
@@ -191,7 +191,8 @@ export default function ConnectToolsPage() {
     setToolsError(null);
     try {
       const res = await fetch(
-        `/api/mcp/zapier/tools?page=${page}&limit=${TOOLS_LIMIT}`
+        `/api/mcp/zapier/tools?page=${page}&limit=${TOOLS_LIMIT}`,
+        { credentials: "include" }
       );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -240,6 +241,7 @@ export default function ConnectToolsPage() {
     try {
       const res = await fetch("/api/mcp/zapier", {
         method: "PUT",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey: key }),
       });
@@ -262,7 +264,7 @@ export default function ConnectToolsPage() {
     if (!confirm("Remove the Zapier MCP API key? This will disconnect all integrations.")) return;
     setRemoving(true);
     try {
-      await fetch("/api/mcp/zapier", { method: "DELETE" });
+      await fetch("/api/mcp/zapier", { method: "DELETE", credentials: "include" });
       setStatus({ configured: false, toolCount: 0 });
       setTools([]);
       setToolsTotal(0);
@@ -278,7 +280,7 @@ export default function ConnectToolsPage() {
     setSyncResult(null);
     setSyncError(null);
     try {
-      const res = await fetch("/api/mcp/zapier/sync", { method: "POST" });
+      const res = await fetch("/api/mcp/zapier/sync", { method: "POST", credentials: "include" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setSyncResult(data as SyncResult);

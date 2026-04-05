@@ -29,7 +29,7 @@ export default function SettingsPage() {
     setLoadingInfo(true);
     setInfoError(null);
     try {
-      const res = await fetch("/api/gateway/health");
+      const res = await fetch("/api/gateway/health", { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setGatewayInfo(data);
@@ -47,7 +47,7 @@ export default function SettingsPage() {
     setLogoutPending(true);
     setLogoutError(null);
     try {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const res = await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
       if (res.ok) {
         window.location.href = "/login";
       } else {

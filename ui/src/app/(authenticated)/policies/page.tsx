@@ -91,7 +91,7 @@ export default function PoliciesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/sandboxes/my-assistant/policy");
+      const res = await fetch("/api/sandboxes/my-assistant/policy", { credentials: "include" });
       if (res.ok) {
         setPresets(await res.json());
       } else {
@@ -106,7 +106,7 @@ export default function PoliciesPage() {
 
   async function loadSandboxes() {
     try {
-      const res = await fetch("/api/sandboxes");
+      const res = await fetch("/api/sandboxes", { credentials: "include" });
       if (res.ok) {
         const data: Sandbox[] = await res.json();
         setSandboxes(data);
@@ -122,6 +122,7 @@ export default function PoliciesPage() {
     try {
       const res = await fetch("/api/sandboxes/my-assistant/policy", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ preset: name }),
       });
@@ -146,8 +147,8 @@ export default function PoliciesPage() {
     setRightPolicies(null);
     try {
       const [lRes, rRes] = await Promise.all([
-        fetch(`/api/sandboxes/${encodeURIComponent(leftSandbox)}/policy`),
-        fetch(`/api/sandboxes/${encodeURIComponent(rightSandbox)}/policy`),
+        fetch(`/api/sandboxes/${encodeURIComponent(leftSandbox)}/policy`, { credentials: "include" }),
+        fetch(`/api/sandboxes/${encodeURIComponent(rightSandbox)}/policy`, { credentials: "include" }),
       ]);
       if (!lRes.ok || !rRes.ok) {
         setCompareError("Failed to fetch policies for one or both sandboxes");

@@ -29,6 +29,7 @@ export default function ProvidersPage() {
     try {
       const res = await fetch("/api/providers", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: form.name,
@@ -51,6 +52,7 @@ export default function ProvidersPage() {
     try {
       await fetch(`/api/providers/${encodeURIComponent(name)}`, {
         method: "DELETE",
+        credentials: "include",
       });
       load();
     } catch {}
