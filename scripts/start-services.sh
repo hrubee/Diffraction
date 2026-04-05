@@ -114,6 +114,7 @@ show_status() {
 
 do_stop() {
   mkdir -p "$PIDDIR"
+  stop_service gateway-watchdog
   stop_service cloudflared
   stop_service telegram-bridge
   info "All services stopped."
