@@ -66,8 +66,8 @@ restart_gateway() {
   fi
 
   # Re-run the diffract entrypoint inside the sandbox
-  docker exec "$cluster" kubectl exec -n openshell "$SANDBOX_NAME" -- \
-    su -s /bin/bash sandbox -c "diffract" 2>/dev/null || true
+  printf '%s\n' "su -s /bin/bash sandbox -c diffract" \
+    | openshell sandbox connect "$SANDBOX_NAME" 2>/dev/null || true
 
   sleep 8
 

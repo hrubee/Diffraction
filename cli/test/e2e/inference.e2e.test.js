@@ -53,9 +53,10 @@ describe("E2E: inference round-trip", { timeout: TIMEOUT }, () => {
     const cluster = run('docker ps --filter "name=openshell-cluster" --format "{{.Names}}" | head -1');
     if (!cluster) return;
 
+    const cmd = `bash -c "HTTPS_PROXY=http://10.200.0.1:3128 curl -sk --max-time 15 https://inference.local/v1/models 2>&1 | head -1"`;
+    const cmdB64 = Buffer.from(cmd).toString("base64");
     const out = run(
-      `docker exec ${cluster} kubectl exec -n openshell my-assistant -- ` +
-      `bash -c "HTTPS_PROXY=http://10.200.0.1:3128 curl -sk --max-time 15 https://inference.local/v1/models 2>&1 | head -1"`
+      `echo ${cmdB64} | base64 -d | openshell sandbox connect my-assistant`
     );
     // Should return JSON with model list
     assert.match(out, /object|models|error/i, `Unexpected inference.local response: ${out.slice(0, 100)}`);

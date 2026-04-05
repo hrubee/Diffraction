@@ -83,9 +83,8 @@ if [ -n "$SANDBOX_NAME" ]; then
 
   # ── 2. Fetch gateway token ────────────────────────────────────────────
   echo "  Fetching gateway token..."
-  CONTAINER="openshell-cluster-diffract"
-  TOKEN=$(docker exec "$CONTAINER" kubectl exec -n openshell "$SANDBOX_NAME" -- \
-    python3 -c "import json; d=json.load(open('/sandbox/.openclaw/openclaw.json')); print(d['gateway']['auth']['token'])" 2>/dev/null || echo "")
+  TOKEN=$(printf '%s\n' "python3 -c \"import json; d=json.load(open('/sandbox/.openclaw/openclaw.json')); print(d['gateway']['auth']['token'])\"" \
+    | openshell sandbox connect "$SANDBOX_NAME" 2>/dev/null | tail -1 | tr -d '\r\n' || echo "")
 
   if [ -n "$TOKEN" ]; then
     echo "  Gateway token: $TOKEN"

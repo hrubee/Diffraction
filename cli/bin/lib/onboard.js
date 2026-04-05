@@ -724,42 +724,45 @@ async function createSandbox(gpu) {
 async function installBrowser(sandboxName) {
   step(6, 8, "Installing browser in sandbox");
 
-  const exec = `openshell doctor exec -- kubectl exec -n openshell ${sandboxName} --`;
+  const sandboxExec = (cmd) => {
+    const b64 = Buffer.from(cmd).toString("base64");
+    return `echo ${b64} | base64 -d | openshell sandbox connect ${JSON.stringify(sandboxName)}`;
+  };
 
   try {
     // 1. Install Playwright + Chromium headless shell (real binary, not Ubuntu snap stub)
     console.log("  Installing Chromium via Playwright (this may take a minute)...");
-    runCapture(`${exec} npx --yes playwright install chromium 2>&1`, { ignoreError: false });
+    runCapture(sandboxExec(`npx --yes playwright install chromium 2>&1`), { ignoreError: false });
 
     // 2. Install system dependencies (libgbm, xvfb, fonts, etc.)
     console.log("  Installing browser system dependencies...");
-    runCapture(`${exec} npx playwright install-deps chromium 2>&1`, { ignoreError: false });
+    runCapture(sandboxExec(`npx playwright install-deps chromium 2>&1`), { ignoreError: false });
 
     // 3. Copy headless shell to an accessible location (/opt/chromium-headless)
     //    Playwright installs to /root/.cache which the sandbox user can't access (drwx------).
     console.log("  Setting up browser for sandbox user...");
     const findResult = runCapture(
-      `${exec} find /root/.cache/ms-playwright -name "chrome-headless-shell" -type f 2>/dev/null`,
+      sandboxExec(`find /root/.cache/ms-playwright -name "chrome-headless-shell" -type f 2>/dev/null`),
       { ignoreError: true }
     );
     const headlessPath = (findResult || "").trim().split("\n")[0];
     if (!headlessPath) {
       // Fallback: try full chromium
       const chromePath = runCapture(
-        `${exec} find /root/.cache/ms-playwright -name "chrome" -type f -not -path "*/headless*" 2>/dev/null`,
+        sandboxExec(`find /root/.cache/ms-playwright -name "chrome" -type f -not -path "*/headless*" 2>/dev/null`),
         { ignoreError: true }
       );
       if (chromePath && chromePath.trim()) {
         const chromeDir = path.dirname(chromePath.trim().split("\n")[0]);
-        runCapture(`${exec} bash -c "cp -r ${chromeDir} /opt/chromium && chmod -R 755 /opt/chromium"`, { ignoreError: false });
-        configureBrowser(sandboxName, exec, "/opt/chromium/chrome");
+        runCapture(sandboxExec(`bash -c "cp -r ${chromeDir} /opt/chromium && chmod -R 755 /opt/chromium"`), { ignoreError: false });
+        configureBrowser(sandboxName, sandboxExec, "/opt/chromium/chrome");
       } else {
         console.error("  WARNING: Could not find Chromium binary after install");
       }
     } else {
       const shellDir = path.dirname(headlessPath);
-      runCapture(`${exec} bash -c "cp -r ${shellDir} /opt/chromium-headless && chmod -R 755 /opt/chromium-headless"`, { ignoreError: false });
-      configureBrowser(sandboxName, exec, "/opt/chromium-headless/chrome-headless-shell");
+      runCapture(sandboxExec(`bash -c "cp -r ${shellDir} /opt/chromium-headless && chmod -R 755 /opt/chromium-headless"`), { ignoreError: false });
+      configureBrowser(sandboxName, sandboxExec, "/opt/chromium-headless/chrome-headless-shell");
     }
 
     console.log("  ✓ Chromium browser installed and configured");
@@ -767,8 +770,8 @@ async function installBrowser(sandboxName) {
     // Non-fatal — sandbox works fine without a browser
     console.error(`  WARNING: Browser install failed: ${err.message}`);
     console.error("  The sandbox will work without a browser. You can install manually later:");
-    console.error(`    ${exec} npx playwright install chromium`);
-    console.error(`    ${exec} npx playwright install-deps chromium`);
+    console.error(`    openshell sandbox connect ${sandboxName}  # then: npx playwright install chromium`);
+    console.error(`    openshell sandbox connect ${sandboxName}  # then: npx playwright install-deps chromium`);
   }
 }
 
@@ -777,7 +780,7 @@ async function installBrowser(sandboxName) {
  * Sets browser.enabled, browser.executablePath, browser.noSandbox, browser.headless
  * in openclaw.json, updates the integrity hash, and fixes permissions.
  */
-function configureBrowser(sandboxName, exec, browserPath) {
+function configureBrowser(sandboxName, sandboxExec, browserPath) {
   // Update openclaw.json with browser config
   const configScript = `
 import json
@@ -787,13 +790,13 @@ d["browser"] = {"enabled": True, "executablePath": "${browserPath}", "noSandbox"
 json.dump(d, open(f, "w"), indent=2)
 print("configured")
 `.trim();
-  runCapture(`${exec} python3 -c '${configScript}' 2>&1`, { ignoreError: false });
+  runCapture(sandboxExec(`python3 -c '${configScript}' 2>&1`), { ignoreError: false });
 
   // Update integrity hash so the gateway accepts the modified config
-  runCapture(`${exec} bash -c "sha256sum /sandbox/.openclaw/openclaw.json > /sandbox/.openclaw/.config-hash"`, { ignoreError: true });
+  runCapture(sandboxExec(`bash -c "sha256sum /sandbox/.openclaw/openclaw.json > /sandbox/.openclaw/.config-hash"`), { ignoreError: true });
 
   // Fix permissions so the sandbox user (who runs the gateway) can write to .openclaw/
-  runCapture(`${exec} bash -c "chown -R sandbox:sandbox /sandbox/.openclaw/ && chmod -R 755 /sandbox/.openclaw/"`, { ignoreError: true });
+  runCapture(sandboxExec(`bash -c "chown -R sandbox:sandbox /sandbox/.openclaw/ && chmod -R 755 /sandbox/.openclaw/"`), { ignoreError: true });
 
   console.log(`  Browser path: ${browserPath}`);
 }
