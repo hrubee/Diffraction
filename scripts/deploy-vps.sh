@@ -63,7 +63,7 @@ apt-get update -qq
 info "Installing system packages..."
 apt-get install -y -qq \
   git curl wget build-essential ca-certificates gnupg lsb-release \
-  python3 python3-pip jq unzip fuser socat
+  python3 python3-pip jq unzip psmisc socat
 
 # ── Node 22 via nvm ──────────────────────────────────────────────
 if [ -s "$NVM_DIR/nvm.sh" ]; then
@@ -230,7 +230,6 @@ DIFFRACTION_NON_INTERACTIVE=1 \
   PATH="$PATH:${HOME}/.local/bin" \
   node "$REPO_DIR/cli/bin/diffract.js" onboard \
   --non-interactive \
-  --sandbox "$SANDBOX_NAME" \
   2>&1 | tail -20 || {
     warn "Onboard exited non-zero (may be already complete or interactive step was skipped)."
     warn "Check: node $REPO_DIR/cli/bin/diffract.js doctor"
@@ -280,8 +279,8 @@ if [ -z "${DIFFRACT_DOMAIN:-}" ]; then
   fi
 fi
 
-# Use :80 for bare IP addresses; domain name triggers Caddy's automatic TLS
-if echo "${DIFFRACT_DOMAIN:-}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+# Use :80 for bare IP addresses (IPv4 or IPv6); domain name triggers Caddy's automatic TLS
+if echo "${DIFFRACT_DOMAIN:-}" | grep -qE '^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F:]+:[0-9a-fA-F:]*)$'; then
   SITE_ADDR=":80"
 else
   SITE_ADDR="${DIFFRACT_DOMAIN:-:80}"
@@ -297,8 +296,9 @@ ${SITE_ADDR} {
     reverse_proxy @websocket 127.0.0.1:18789
 
     handle /__openclaw/* {
-        header_up Host 127.0.0.1:18789
-        reverse_proxy 127.0.0.1:18789
+        reverse_proxy 127.0.0.1:18789 {
+            header_up Host {hostport}
+        }
     }
 
     handle /api/* {
