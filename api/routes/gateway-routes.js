@@ -41,6 +41,7 @@ router.get("/", (_req, res) => {
       sandbox: f.name,
       port: f.port,
       url: `/agent/${f.name}/`,
+      chatUrl: `/sandboxes/${f.name}/diffract_chat/`,
     })),
   });
 });
@@ -57,6 +58,7 @@ router.get("/:name", (req, res) => {
     sandbox: match.name,
     port: match.port,
     url: `/agent/${match.name}/`,
+    chatUrl: `/sandboxes/${match.name}/diffract_chat/`,
   });
 });
 
@@ -74,7 +76,7 @@ router.post("/sync", (_req, res) => {
 });
 
 function generateCaddyfile(forwards) {
-  // Per-sandbox agent blocks
+  // Per-sandbox agent + chat blocks
   const agentBlocks = forwards.map((f) => `
 	# Sandbox: ${f.name} (port ${f.port})
 	handle /agent/${f.name}/* {
@@ -88,6 +90,18 @@ function generateCaddyfile(forwards) {
 	}
 	handle /agent/${f.name} {
 		redir /agent/${f.name}/ permanent
+	}
+	handle /sandboxes/${f.name}/diffract_chat/* {
+		uri strip_prefix /sandboxes/${f.name}/diffract_chat
+		reverse_proxy 127.0.0.1:${f.port} {
+			header_up Host 127.0.0.1:${f.port}
+			header_up Origin http://127.0.0.1:${f.port}
+			header_down -X-Frame-Options
+			header_down Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors https://${DOMAIN}; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: wss: https://${DOMAIN};"
+		}
+	}
+	handle /sandboxes/${f.name}/diffract_chat {
+		redir /sandboxes/${f.name}/diffract_chat/ permanent
 	}`).join("\n");
 
   // WebSocket block — route to correct sandbox based on referer or default to first
