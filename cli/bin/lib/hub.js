@@ -121,15 +121,11 @@ function deployToSandbox(name, sandboxName) {
 
   if (!cluster) throw new Error("No openshell cluster container found");
 
-  // Copy into sandbox via docker cp + kubectl cp
-  const tmpPath = `/tmp/skill-${name}-${Date.now()}`;
-  execSync(`docker cp "${skillDir}" "${cluster}:${tmpPath}"`, { stdio: "pipe" });
+  // Copy into sandbox via openshell sandbox upload
   execSync(
-    `docker exec "${cluster}" kubectl cp "${tmpPath}" "openshell/${sandboxName}:/sandbox/.openclaw-data/skills/${name}"`,
+    `openshell sandbox upload ${JSON.stringify(sandboxName)} ${JSON.stringify(skillDir)} "/sandbox/.openclaw-data/skills/${name}"`,
     { stdio: "pipe" }
   );
-  // Cleanup tmp
-  execSync(`docker exec "${cluster}" rm -rf "${tmpPath}"`, { stdio: "pipe" });
 
   return { name, sandbox: sandboxName };
 }

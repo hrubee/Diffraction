@@ -11,22 +11,21 @@ const router = Router();
 
 /**
  * Dynamically fetch the gateway token from the sandbox.
- * Handles kubectl stderr noise (e.g. "Defaulted container") by extracting
- * only the JSON line from the output.
  */
 function fetchTokenFromSandbox() {
   try {
-    // Redirect stderr to /dev/null to avoid kubectl warnings polluting output
+    // Build the command to run inside the sandbox, base64-encoded to avoid quoting issues
+    const innerCmd = `python3 -c "import json; d=json.load(open('/sandbox/.openclaw/openclaw.json')); print(d['gateway']['auth']['token'])"`;
+    const cmdB64 = Buffer.from(innerCmd).toString("base64");
     const output = execSync(
       `export PATH="$PATH:$HOME/.local/bin"; ` +
         `SANDBOX=$(openshell sandbox list 2>/dev/null | grep -oP '^\\S+' | grep -v NAME | head -1); ` +
-        `[ -n "$SANDBOX" ] && openshell doctor exec -- kubectl exec -n openshell "$SANDBOX" -- ` +
-        `python3 -c "import json; d=json.load(open('/sandbox/.openclaw/openclaw.json')); ` +
-        `print(json.dumps({'token': d['gateway']['auth']['token'], 'sandbox': '$SANDBOX'}))" 2>/dev/null`,
+        `[ -n "$SANDBOX" ] && TOKEN=$(echo ${cmdB64} | base64 -d | openshell sandbox connect "$SANDBOX" 2>/dev/null | tail -1 | tr -d '\\r\\n') && ` +
+        `echo "{\\"token\\":\\"$TOKEN\\",\\"sandbox\\":\\"$SANDBOX\\"}"`,
       { encoding: "utf-8", timeout: 15000 }
     ).trim();
 
-    // Extract only the JSON line — kubectl may prepend warnings
+    // Extract only the JSON line from output
     const lines = output.split("\n");
     for (const line of lines) {
       const trimmed = line.trim();

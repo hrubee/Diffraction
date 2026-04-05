@@ -87,13 +87,16 @@ router.delete("/:name", async (req, res) => {
 router.post("/:name/restart-gateway", async (req, res) => {
   try {
     const name = req.params.name;
-    const kubectl = `export PATH="$PATH:$HOME/.local/bin"; openshell doctor exec -- kubectl exec -n openshell ${name} --`;
+    const sandboxExec = (cmd) => {
+      const b64 = Buffer.from(cmd).toString("base64");
+      return `echo ${b64} | base64 -d | openshell sandbox connect ${JSON.stringify(name)}`;
+    };
 
     // Step 1 — Find the gateway PID using /proc scanning
     let gatewyPid = null;
     try {
       const pidOutput = execSync(
-        `${kubectl} node -e "const fs=require('fs'); const files=fs.readdirSync('/proc').filter(f=>/^\\\\d+$/.test(f)); for(const p of files){try{const cmd=fs.readFileSync('/proc/'+p+'/cmdline','utf8'); if(cmd.includes('openclaw-gateway')){console.log(p);break;}}catch{}}"`,
+        sandboxExec(`node -e "const fs=require('fs'); const files=fs.readdirSync('/proc').filter(f=>/^\\d+$/.test(f)); for(const p of files){try{const cmd=fs.readFileSync('/proc/'+p+'/cmdline','utf8'); if(cmd.includes('openclaw-gateway')){console.log(p);break;}}catch{}}"`) ,
         { encoding: "utf-8", timeout: 10000 }
       ).trim().replace(/\x1b\[[0-9;]*m/g, "");
       if (pidOutput && /^\d+$/.test(pidOutput)) {
@@ -107,7 +110,7 @@ router.post("/:name/restart-gateway", async (req, res) => {
     if (gatewyPid) {
       try {
         execSync(
-          `${kubectl} node -e "process.kill(${gatewyPid}, 9)"`,
+          sandboxExec(`node -e "process.kill(${gatewyPid}, 9)"`),
           { encoding: "utf-8", timeout: 8000 }
         );
       } catch { /* already dead */ }
@@ -118,7 +121,7 @@ router.post("/:name/restart-gateway", async (req, res) => {
 
     // Step 4 — Start gateway in background
     execSync(
-      `${kubectl} bash -c "nohup /usr/local/bin/diffract gateway > /tmp/gw.log 2>&1 &"`,
+      sandboxExec(`bash -c "nohup /usr/local/bin/diffract gateway > /tmp/gw.log 2>&1 &"`),
       { encoding: "utf-8", timeout: 10000 }
     );
 

@@ -289,24 +289,27 @@ print("ok")
 
   for (const name of sandboxNames) {
     try {
-      const exec = `export PATH="$PATH:$HOME/.local/bin"; openshell doctor exec -- kubectl exec -n openshell ${name} --`;
+      const sandboxExec = (cmd) => {
+        const b64 = Buffer.from(cmd).toString("base64");
+        return `echo ${b64} | base64 -d | openshell sandbox connect ${JSON.stringify(name)}`;
+      };
 
       // Write merge script to sandbox
       const b64Script = Buffer.from(mergeScript).toString("base64");
       execSync(
-        `${exec} bash -c "echo '${b64Script}' | base64 -d > /tmp/merge-mcp.py"`,
+        sandboxExec(`bash -c "echo '${b64Script}' | base64 -d > /tmp/merge-mcp.py"`),
         { encoding: "utf-8", timeout: 10000 }
       );
 
       // Run the script with the config as argument
       execSync(
-        `${exec} python3 /tmp/merge-mcp.py "${b64Config}"`,
+        sandboxExec(`python3 /tmp/merge-mcp.py "${b64Config}"`),
         { encoding: "utf-8", timeout: 15000 }
       );
 
       // Update hash + permissions
       execSync(
-        `${exec} bash -c "sha256sum /sandbox/.openclaw/openclaw.json > /sandbox/.openclaw/.config-hash && chown -R sandbox:sandbox /sandbox/.openclaw/"`,
+        sandboxExec(`bash -c "sha256sum /sandbox/.openclaw/openclaw.json > /sandbox/.openclaw/.config-hash && chown -R sandbox:sandbox /sandbox/.openclaw/"`),
         { encoding: "utf-8", timeout: 10000 }
       );
 
