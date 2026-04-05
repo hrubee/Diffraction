@@ -279,6 +279,16 @@ if [ -z "${DIFFRACT_DOMAIN:-}" ]; then
   fi
 fi
 
+# If we only have an IP, try to resolve the FQDN for Caddy auto-TLS
+if echo "${DIFFRACT_DOMAIN:-}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+  FQDN="$(hostname -f 2>/dev/null || true)"
+  # Accept FQDN only if it contains a dot and is not itself an IP
+  if echo "${FQDN:-}" | grep -qE '\.' && ! echo "${FQDN:-}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    info "Resolved FQDN: $FQDN — using for Caddy auto-TLS (HTTPS)"
+    DIFFRACT_DOMAIN="$FQDN"
+  fi
+fi
+
 # Use :80 for bare IP addresses (IPv4 or IPv6); domain name triggers Caddy's automatic TLS
 if echo "${DIFFRACT_DOMAIN:-}" | grep -qE '^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F:]+:[0-9a-fA-F:]*)$'; then
   SITE_ADDR=":80"
