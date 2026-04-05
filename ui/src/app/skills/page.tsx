@@ -215,7 +215,7 @@ export default function SkillsPage() {
 
   // Fetch presets
   useEffect(() => {
-    fetch("/api/skills")
+    fetch("/api/skills", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
         setPresets(data.presets || []);
@@ -228,7 +228,7 @@ export default function SkillsPage() {
 
   // Fetch sandboxes (for the apply dropdown)
   useEffect(() => {
-    fetch("/api/sandboxes")
+    fetch("/api/sandboxes", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
         setSandboxes(data.sandboxes || []);

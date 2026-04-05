@@ -63,9 +63,9 @@ export default function DashboardPage() {
       setError(null);
       try {
         const [sbRes, healthRes, usageRes] = await Promise.allSettled([
-          fetch("/api/sandboxes").then((r) => (r.ok ? r.json() : Promise.reject(r.statusText))),
-          fetch("/api/gateway/health").then((r) => (r.ok ? r.json() : null)),
-          fetch("/api/usage").then((r) => (r.ok ? r.json() : [])),
+          fetch("/api/sandboxes", { credentials: "include" }).then((r) => (r.ok ? r.json() : Promise.reject(r.statusText))),
+          fetch("/api/gateway/health", { credentials: "include" }).then((r) => (r.ok ? r.json() : null)),
+          fetch("/api/usage", { credentials: "include" }).then((r) => (r.ok ? r.json() : [])),
         ]);
 
         if (sbRes.status === "fulfilled") setSandboxes(sbRes.value);

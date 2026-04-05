@@ -12,7 +12,7 @@ export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
 
   useEffect(() => {
     setTokenLoading(true);
-    fetch("/api/gateway-token")
+    fetch("/api/gateway-token", { credentials: "include" })
       .then((r) => r.json())
       .then((data) => setToken(data.token ?? null))
       .catch(() => setToken(null))

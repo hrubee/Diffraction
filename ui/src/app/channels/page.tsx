@@ -673,7 +673,7 @@ export default function ChannelsPage() {
 
   const loadChannels = useCallback(async () => {
     try {
-      const res = await fetch("/api/channels");
+      const res = await fetch("/api/channels", { credentials: "include" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: { channels: Channel[] } = await res.json();
       setChannels(data.channels);
@@ -687,7 +687,7 @@ export default function ChannelsPage() {
 
   const loadSandboxes = useCallback(async () => {
     try {
-      const res = await fetch("/api/sandboxes");
+      const res = await fetch("/api/sandboxes", { credentials: "include" });
       if (!res.ok) return;
       const data: { sandboxes: SandboxEntry[] } = await res.json();
       setSandboxes(data.sandboxes);

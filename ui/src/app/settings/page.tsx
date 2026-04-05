@@ -13,7 +13,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/config/gateway")
+    fetch("/api/config/gateway", { credentials: "include" })
       .then((r) => r.json())
       .then(setConfig)
       .catch((err) => setError(err.message))
@@ -24,6 +24,7 @@ export default function SettingsPage() {
     try {
       await fetch("/api/config", {
         method: "PUT",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           global: true,
@@ -31,7 +32,7 @@ export default function SettingsPage() {
         }),
       });
       // Refresh
-      const r = await fetch("/api/config/gateway");
+      const r = await fetch("/api/config/gateway", { credentials: "include" });
       setConfig(await r.json());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Update failed");
@@ -138,7 +139,7 @@ export default function SettingsPage() {
                 <button
                   onClick={async () => {
                     try {
-                      const r = await fetch("/api/auth/token");
+                      const r = await fetch("/api/auth/token", { credentials: "include" });
                       if (r.ok) {
                         const data = await r.json();
                         navigator.clipboard.writeText(data.token);
@@ -154,7 +155,7 @@ export default function SettingsPage() {
                   onClick={async () => {
                     if (!confirm("Generate a new API token? All existing sessions will be invalidated.")) return;
                     try {
-                      await fetch("/api/auth/logout", { method: "POST" });
+                      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
                       window.location.href = "/login";
                     } catch {}
                   }}

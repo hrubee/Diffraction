@@ -47,7 +47,7 @@ export default function ModelsPage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/models")
+    fetch("/api/models", { credentials: "include" })
       .then((r) => {
         if (!r.ok) throw new Error(r.statusText);
         return r.json();
@@ -60,15 +60,16 @@ export default function ModelsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleSwitch(modelId: string) {
+  async function handleSwitch(provider: string, modelId: string) {
     setSwitching(modelId);
     setSwitchError(null);
     setSwitchSuccess(null);
     try {
-      const res = await fetch("/api/models/switch", {
-        method: "POST",
+      const res = await fetch("/api/models/active", {
+        method: "PUT",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelId }),
+        body: JSON.stringify({ provider, model: modelId }),
       });
       if (res.ok) {
         setSwitchSuccess(modelId);
@@ -142,7 +143,7 @@ export default function ModelsPage() {
                 <Button
                   size="sm"
                   className="w-full"
-                  onClick={() => handleSwitch(m.id)}
+                  onClick={() => handleSwitch(m.provider, m.id)}
                   disabled={switching === m.id}
                 >
                   {switching === m.id ? "Switching..." : "Switch to this model"}

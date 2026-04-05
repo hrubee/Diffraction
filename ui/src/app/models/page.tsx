@@ -209,7 +209,7 @@ export default function ModelsPage() {
 
   // Fetch model registry
   useEffect(() => {
-    fetch("/api/models")
+    fetch("/api/models", { credentials: "include" })
       .then((r) => r.json())
       .then(setRegistry)
       .catch(() => {})
@@ -219,7 +219,7 @@ export default function ModelsPage() {
   // Fetch active model
   const fetchActive = useCallback(() => {
     setActiveLoading(true);
-    fetch("/api/models/active")
+    fetch("/api/models/active", { credentials: "include" })
       .then((r) => r.json())
       .then(setActive)
       .catch(() => setActive({ provider: null, model: null, available: false }))
@@ -239,6 +239,7 @@ export default function ModelsPage() {
       try {
         const res = await fetch("/api/models/active", {
           method: "PUT",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider, model }),
         });

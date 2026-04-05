@@ -74,7 +74,7 @@ export default function SandboxDetailPage() {
             onClick={async () => {
               setRestarting(true);
               try {
-                const r = await fetch(`/api/sandboxes/${encodeURIComponent(name)}/restart-gateway`, { method: "POST" });
+                const r = await fetch(`/api/sandboxes/${encodeURIComponent(name)}/restart-gateway`, { method: "POST", credentials: "include" });
                 const data = await r.json();
                 if (data.healthy) {
                   setError(null);
