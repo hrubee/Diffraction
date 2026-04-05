@@ -66,7 +66,7 @@ restart_gateway() {
   fi
 
   # Re-run the diffract entrypoint inside the sandbox
-  printf '%s\n' "su -s /bin/bash sandbox -c diffract" \
+  printf '%s\n' "HOME=/sandbox /usr/local/bin/diffract gateway run --bind loopback --port 18789 --auth none &" \
     | openshell sandbox connect "$SANDBOX_NAME" 2>/dev/null || true
 
   sleep 8
