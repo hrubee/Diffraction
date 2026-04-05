@@ -1,198 +1,200 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useGateway } from "@/lib/use-gateway";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Wifi, WifiOff, Server, Key, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 
-interface GatewayInfo {
-  version?: string;
-  uptime?: number;
+interface GatewayConfig {
+  settings?: Record<string, string>;
+  [key: string]: unknown;
 }
 
 export default function SettingsPage() {
-  const { connected } = useGateway();
-  const [gatewayInfo, setGatewayInfo] = useState<GatewayInfo | null>(null);
-  const [loadingInfo, setLoadingInfo] = useState(true);
-  const [infoError, setInfoError] = useState<string | null>(null);
-  const [logoutPending, setLogoutPending] = useState(false);
-  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const [config, setConfig] = useState<GatewayConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadGatewayInfo();
+    fetch("/api/config/gateway", { credentials: "include" })
+      .then((r) => r.json())
+      .then(setConfig)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, []);
 
-  async function loadGatewayInfo() {
-    setLoadingInfo(true);
-    setInfoError(null);
+  const handleUpdate = async (key: string, value: string) => {
     try {
-      const res = await fetch("/api/gateway/health", { credentials: "include" });
-      if (res.ok) {
-        const data = await res.json();
-        setGatewayInfo(data);
-      } else {
-        setInfoError("Could not fetch gateway details");
-      }
-    } catch {
-      setInfoError("Could not fetch gateway details");
-    } finally {
-      setLoadingInfo(false);
+      await fetch("/api/config", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          global: true,
+          settings: { [key]: value },
+        }),
+      });
+      // Refresh
+      const r = await fetch("/api/config/gateway", { credentials: "include" });
+      setConfig(await r.json());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Update failed");
     }
-  }
-
-  async function handleLogout() {
-    setLogoutPending(true);
-    setLogoutError(null);
-    try {
-      const res = await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-      if (res.ok) {
-        window.location.href = "/login";
-      } else {
-        setLogoutError("Logout failed. Try again.");
-      }
-    } catch {
-      setLogoutError("Logout failed. Try again.");
-    } finally {
-      setLogoutPending(false);
-    }
-  }
-
-  function formatUptime(seconds?: number) {
-    if (!seconds) return "—";
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
-  }
+  };
 
   return (
-    <div className="p-4 sm:p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Settings</h1>
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Settings</h1>
+        <p className="text-sm text-zinc-500 mt-1">
+          Gateway-global configuration
+        </p>
+      </div>
 
-      <div className="space-y-4 w-full max-w-lg">
-        {/* Gateway Connection */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Server className="h-4 w-4" /> Gateway Connection
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Status</span>
-              <Badge variant={connected ? "default" : "destructive"} className="gap-1">
-                {connected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                {connected ? "Connected" : "Disconnected"}
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Port</span>
-              <span className="text-sm text-muted-foreground font-mono">18789</span>
-            </div>
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-sm text-red-400">
+          {error}
+        </div>
+      )}
 
-            {loadingInfo ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Version</span>
-                  <Skeleton className="h-4 w-20" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Uptime</span>
-                  <Skeleton className="h-4 w-16" />
-                </div>
-              </>
-            ) : infoError ? (
-              <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                {infoError}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 ml-auto"
-                  onClick={loadGatewayInfo}
-                >
-                  <RefreshCw className="h-3 w-3" />
-                </Button>
+      {loading ? (
+        <div className="text-sm text-zinc-500">Loading...</div>
+      ) : (
+        <div className="space-y-4">
+          {/* Gateway info */}
+          <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+              Gateway Configuration
+            </h2>
+            {config ? (
+              <div className="space-y-2">
+                {Object.entries(config).map(([key, value]) => {
+                  if (
+                    key === "settings" ||
+                    typeof value === "object" ||
+                    value === null
+                  )
+                    return null;
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between py-1.5 border-b border-zinc-800/50 last:border-0"
+                    >
+                      <span className="text-sm text-zinc-400 font-mono">
+                        {key}
+                      </span>
+                      <span className="text-sm text-zinc-200">{String(value)}</span>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <>
-                {gatewayInfo?.version && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Version</span>
-                    <span className="text-sm text-muted-foreground font-mono">
-                      {gatewayInfo.version}
-                    </span>
-                  </div>
-                )}
-                {gatewayInfo?.uptime !== undefined && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">Uptime</span>
-                    <span className="text-sm text-muted-foreground">
-                      {formatUptime(gatewayInfo.uptime)}
-                    </span>
-                  </div>
-                )}
-              </>
+              <p className="text-sm text-zinc-500">
+                No gateway configuration available
+              </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Authentication */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Key className="h-4 w-4" /> Authentication
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Auth Mode</span>
-              <span className="text-sm text-muted-foreground">Token</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Token is stored in an httpOnly cookie. Logout clears it.
-            </p>
-
-            {logoutError && (
-              <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                {logoutError}
+          {/* Settings key-value pairs */}
+          {config?.settings &&
+            Object.keys(config.settings).length > 0 && (
+              <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4">
+                <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+                  Runtime Settings
+                </h2>
+                <div className="space-y-2">
+                  {Object.entries(config.settings).map(([key, value]) => (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between py-1.5 border-b border-zinc-800/50 last:border-0"
+                    >
+                      <span className="text-sm text-zinc-400 font-mono">
+                        {key}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-zinc-200">{value}</span>
+                        <button
+                          onClick={() => {
+                            const newVal = prompt(`Edit "${key}":`, value);
+                            if (newVal !== null) handleUpdate(key, newVal);
+                          }}
+                          className="text-xs text-indigo-400 hover:text-indigo-300"
+                        >
+                          edit
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={handleLogout}
-              disabled={logoutPending}
-            >
-              {logoutPending ? "Signing out..." : "Sign Out"}
-            </Button>
-          </CardContent>
-        </Card>
+          {/* API Token */}
+          <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+              API Token
+            </h2>
+            <div className="space-y-3">
+              <p className="text-xs text-zinc-500">
+                Used to authenticate with the dashboard. Share this with authorized users.
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      const r = await fetch("/api/auth/token", { credentials: "include" });
+                      if (r.ok) {
+                        const data = await r.json();
+                        navigator.clipboard.writeText(data.token);
+                        alert("Token copied to clipboard");
+                      }
+                    } catch {}
+                  }}
+                  className="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-md text-zinc-300 transition-colors"
+                >
+                  Copy Token
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!confirm("Generate a new API token? All existing sessions will be invalidated.")) return;
+                    try {
+                      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+                      window.location.href = "/login";
+                    } catch {}
+                  }}
+                  className="px-3 py-1.5 text-xs bg-red-600/20 text-red-400 border border-red-500/30 rounded-md hover:bg-red-600/30 transition-colors"
+                >
+                  Rotate Token
+                </button>
+              </div>
+            </div>
+          </div>
 
-        {/* About */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" /> About
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Platform</span>
-              <span className="text-sm text-muted-foreground">Diffract</span>
+          {/* Connection info */}
+          <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider mb-3">
+              Connection
+            </h2>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between py-1.5 border-b border-zinc-800/50">
+                <span className="text-zinc-400">gRPC Gateway</span>
+                <span className="text-zinc-200 font-mono">
+                  127.0.0.1:8080 (mTLS)
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-zinc-800/50">
+                <span className="text-zinc-400">OpenClaw Gateway</span>
+                <span className="text-zinc-200 font-mono">
+                  127.0.0.1:18789 (WebSocket)
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-zinc-400">API Bridge</span>
+                <span className="text-zinc-200 font-mono">
+                  127.0.0.1:3001 (HTTP)
+                </span>
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Security</span>
-              <Badge variant="outline" className="text-xs">Landlock + seccomp</Badge>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
