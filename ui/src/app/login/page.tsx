@@ -10,13 +10,13 @@ export default function LoginPage() {
   const [isPending, startTransition] = useTransition();
 
   const [mode, setMode] = useState<Mode>("login");
-  const [token, setToken] = useState("");
-  const [setupToken, setSetupToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // On mount: check if already authenticated, and detect first-run setup mode.
+  // On mount: check if already authenticated, then detect first-visit setup mode.
   useEffect(() => {
     const init = async () => {
       // If already authenticated, bounce to home.
@@ -30,24 +30,19 @@ export default function LoginPage() {
         // network error — continue to login form
       }
 
-      // Check whether this is first-run (token was just auto-generated).
-      // We detect this by calling GET /api/auth/token which only succeeds when
-      // authenticated, but the login route also exposes isNew via a special
-      // first-run sentinel. Instead we POST with an empty string to probe —
-      // the server returns 401, and we inspect whether a token already existed
-      // by requesting the token endpoint after a successful login. For the
-      // setup flow, we have a dedicated probe: if no token exists yet the
-      // server will create one on first getOrCreateToken() call. We call
-      // /api/auth/me which triggers getOrCreateToken() server-side; if the
-      // generated token is brand new the server has no way to convey that
-      // without a dedicated route. We use a simpler heuristic: ask
-      // /api/auth/setup-check which we do not have, so instead we POST login
-      // with a special payload to see if a token was just created.
-      //
-      // Practical approach: we always show login mode. If the user has no
-      // token yet, they can click "First time setup?" to reveal the
-      // auto-generated token via an authenticated fetch (which bootstraps
-      // itself on first call server-side).
+      // Determine whether first-visit setup is required.
+      try {
+        const statusRes = await fetch("/api/auth/status");
+        if (statusRes.ok) {
+          const data = await statusRes.json();
+          if (data.setupRequired) {
+            setMode("setup");
+          }
+        }
+      } catch {
+        // network error — default to login mode
+      }
+
       setLoading(false);
     };
     init();
@@ -57,9 +52,12 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
 
-    const trimmed = token.trim();
-    if (!trimmed) {
-      setError("Enter your API token.");
+    if (!username.trim()) {
+      setError("Enter your username.");
+      return;
+    }
+    if (!password) {
+      setError("Enter your password.");
       return;
     }
 
@@ -68,7 +66,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ token: trimmed }),
+        body: JSON.stringify({ username: username.trim(), password }),
       });
 
       if (res.ok) {
@@ -79,77 +77,48 @@ export default function LoginPage() {
       }
 
       const body = await res.json().catch(() => ({}));
-      setError(body.error ?? "Invalid token. Check your credentials and try again.");
+      setError(body.error ?? "Invalid username or password.");
     } catch {
       setError("Could not reach the API server. Make sure it is running on port 3001.");
     }
   };
 
-  const handleRevealSetupToken = async () => {
+  const handleSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
     setError(null);
-    try {
-      // First, log in with the auto-generated token (which may be unknown to
-      // the user). Since we can't read it client-side without being auth'd,
-      // we ask the user to open the server logs for the generated token.
-      // The setup mode simply shows instructions and the current token after
-      // the user provides it — or we can do a bootstrap fetch.
-      //
-      // Better UX: call a special endpoint that returns the token only when
-      // no session exists yet AND the credentials file has a fresh token.
-      // We approximate this by attempting /api/auth/token with no auth — it
-      // will 401. We then surface instructions to the user.
-      //
-      // Actually the cleanest approach for first-run: the server logs the
-      // token on startup. Here we show the instructions panel.
-      setMode("setup");
-      setSetupToken(null);
-    } catch {
-      setError("Could not switch to setup mode.");
-    }
-  };
 
-  const handleSetupReveal = async () => {
-    setError(null);
-    const trimmed = token.trim();
-    if (!trimmed) {
-      setError("Paste the token from your server startup logs first.");
+    if (!username.trim()) {
+      setError("Enter a username.");
       return;
     }
-    // Try to log in with whatever the user pasted; if it works we also fetch
-    // the canonical token to display back to them.
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch("/api/auth/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ token: trimmed }),
+        body: JSON.stringify({ username: username.trim(), password }),
       });
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.error ?? "Token mismatch. Check the server logs.");
+      if (res.ok) {
+        startTransition(() => {
+          router.replace("/");
+        });
         return;
       }
 
-      // Fetch the canonical token for display
-      const tokenRes = await fetch("/api/auth/token", { credentials: "include" });
-      if (tokenRes.ok) {
-        const data = await tokenRes.json();
-        setSetupToken(data.token);
-      }
+      const body = await res.json().catch(() => ({}));
+      setError(body.error ?? "Setup failed. Try again.");
     } catch {
-      setError("Could not reach the API server.");
-    }
-  };
-
-  const handleCopy = async () => {
-    if (!setupToken) return;
-    try {
-      await navigator.clipboard.writeText(setupToken);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // clipboard not available
+      setError("Could not reach the API server. Make sure it is running on port 3001.");
     }
   };
 
@@ -183,31 +152,119 @@ export default function LoginPage() {
           </div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Diffract</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            {mode === "login"
-              ? "Enter your API token to access the control plane"
-              : "First time setup — save your generated token"}
+            {mode === "setup"
+              ? "Create your admin account to get started"
+              : "Sign in to access the control plane"}
           </p>
         </div>
 
         {/* Card */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
-          {mode === "login" ? (
+          {mode === "setup" ? (
+            <form onSubmit={handleSetup} className="space-y-4">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="setup-username"
+                  className="text-xs font-medium text-zinc-400 uppercase tracking-wider"
+                >
+                  Username
+                </label>
+                <input
+                  id="setup-username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="admin"
+                  autoComplete="username"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="setup-password"
+                  className="text-xs font-medium text-zinc-400 uppercase tracking-wider"
+                >
+                  Password
+                </label>
+                <input
+                  id="setup-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  autoComplete="new-password"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="setup-confirm"
+                  className="text-xs font-medium text-zinc-400 uppercase tracking-wider"
+                >
+                  Confirm Password
+                </label>
+                <input
+                  id="setup-confirm"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Repeat password"
+                  autoComplete="new-password"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
+                />
+              </div>
+
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2.5 text-sm text-red-400">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isPending}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white font-medium text-sm py-2.5 px-4 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
+              >
+                {isPending ? "Creating account..." : "Create admin account"}
+              </button>
+            </form>
+          ) : (
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-1.5">
                 <label
-                  htmlFor="token-input"
+                  htmlFor="login-username"
                   className="text-xs font-medium text-zinc-400 uppercase tracking-wider"
                 >
-                  API Token
+                  Username
                 </label>
                 <input
-                  id="token-input"
+                  id="login-username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="admin"
+                  autoComplete="username"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="login-password"
+                  className="text-xs font-medium text-zinc-400 uppercase tracking-wider"
+                >
+                  Password
+                </label>
+                <input
+                  id="login-password"
                   type="password"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="Paste your API token"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Your password"
                   autoComplete="current-password"
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors font-mono"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors"
                 />
               </div>
 
@@ -225,107 +282,6 @@ export default function LoginPage() {
                 {isPending ? "Signing in..." : "Sign in"}
               </button>
             </form>
-          ) : (
-            <div className="space-y-4">
-              {/* Setup mode — token reveal */}
-              <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg px-3 py-3 text-xs text-zinc-400 space-y-1.5">
-                <p className="font-medium text-zinc-300">How to find your token</p>
-                <p>
-                  On first run, Diffract auto-generates a token and saves it to{" "}
-                  <code className="font-mono text-indigo-400">~/.diffract/credentials.json</code>{" "}
-                  under the key <code className="font-mono text-indigo-400">DIFFRACT_API_TOKEN</code>.
-                </p>
-                <p>
-                  Paste it below to log in and display it here for safekeeping.
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="setup-token-input"
-                  className="text-xs font-medium text-zinc-400 uppercase tracking-wider"
-                >
-                  Token from credentials file
-                </label>
-                <input
-                  id="setup-token-input"
-                  type="text"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="Paste token from credentials.json"
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-colors font-mono"
-                />
-              </div>
-
-              {error && (
-                <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2.5 text-sm text-red-400">
-                  {error}
-                </div>
-              )}
-
-              {setupToken ? (
-                <div className="space-y-2">
-                  <p className="text-xs text-zinc-400">Your token (save this somewhere safe):</p>
-                  <div className="flex items-center gap-2 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5">
-                    <code className="flex-1 text-xs text-emerald-400 font-mono break-all">
-                      {setupToken}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={handleCopy}
-                      className="shrink-0 text-xs text-zinc-400 hover:text-white transition-colors"
-                    >
-                      {copied ? "Copied" : "Copy"}
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      startTransition(() => {
-                        router.replace("/");
-                      });
-                    }}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm py-2.5 px-4 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
-                  >
-                    Continue to dashboard
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSetupReveal}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm py-2.5 px-4 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
-                >
-                  Verify and show token
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Toggle between login and setup */}
-        <div className="text-center mt-4">
-          {mode === "login" ? (
-            <button
-              type="button"
-              onClick={handleRevealSetupToken}
-              className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
-            >
-              First time setup?
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setMode("login");
-                setError(null);
-                setToken("");
-                setSetupToken(null);
-              }}
-              className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
-            >
-              Back to sign in
-            </button>
           )}
         </div>
       </div>

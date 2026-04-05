@@ -1,15 +1,21 @@
-// auth.js — API authentication middleware and token management
-// Reads/creates DIFFRACT_API_TOKEN in ~/.diffract/credentials.json
-// Validates requests via Authorization: Bearer or diffract_session cookie
+// auth.js — API authentication middleware (username/password + session cookies)
+// Admin credentials stored as bcrypt hash in ~/.diffract/credentials.json (mode 600).
+// Sessions are kept in-memory; a fresh API restart requires re-login.
 
 import crypto from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import bcrypt from "bcryptjs";
 
 const CREDENTIALS_PATH = path.join(os.homedir(), ".diffract", "credentials.json");
+const BCRYPT_ROUNDS = 12;
+const COOKIE_NAME = "diffract_session";
 
-// --- Credentials helpers (mirrors the pattern in routes/mcp.js) ---
+// In-memory session store: sessionToken → { username, createdAt }
+const sessions = new Map();
+
+// --- Credentials helpers ---
 
 function readCredentials() {
   try {
@@ -34,25 +40,7 @@ function writeCredentials(data) {
 }
 
 /**
- * Returns the stored DIFFRACT_API_TOKEN, generating and persisting one if none
- * exists yet. The generated token is 32 hex characters (16 random bytes).
- *
- * @returns {{ token: string, isNew: boolean }}
- */
-export function getOrCreateToken() {
-  const creds = readCredentials();
-  if (creds.DIFFRACT_API_TOKEN) {
-    return { token: creds.DIFFRACT_API_TOKEN, isNew: false };
-  }
-  const token = crypto.randomBytes(16).toString("hex");
-  creds.DIFFRACT_API_TOKEN = token;
-  writeCredentials(creds);
-  return { token, isNew: true };
-}
-
-/**
  * Parse the diffract_session cookie value from a raw Cookie header string.
- * We do not depend on cookie-parser — just a targeted substring search.
  *
  * @param {string | undefined} cookieHeader
  * @returns {string | null}
@@ -61,7 +49,7 @@ function extractSessionCookie(cookieHeader) {
   if (!cookieHeader) return null;
   for (const part of cookieHeader.split(";")) {
     const [name, ...rest] = part.trim().split("=");
-    if (name.trim() === "diffract_session") {
+    if (name.trim() === COOKIE_NAME) {
       return rest.join("=").trim();
     }
   }
@@ -69,45 +57,89 @@ function extractSessionCookie(cookieHeader) {
 }
 
 /**
- * Express middleware that enforces authentication on every request it wraps.
- * Accepts either:
- *   - Authorization: Bearer <token>  header
- *   - diffract_session cookie set by POST /api/auth/login
+ * Returns true if no admin account has been created yet.
+ * This drives the first-visit setup flow.
  *
- * Returns 401 { error: "Unauthorized" } if neither is present or valid.
- * On authenticated requests, appends an entry to the audit buffer.
+ * @returns {boolean}
+ */
+export function isSetupRequired() {
+  const creds = readCredentials();
+  return !creds.admin_username || !creds.admin_password_hash;
+}
+
+/**
+ * Create the initial admin account. Only succeeds when setup is required.
+ * Throws if an admin already exists.
+ *
+ * @param {string} username
+ * @param {string} password
+ */
+export async function createAdminUser(username, password) {
+  if (!isSetupRequired()) {
+    throw new Error("Admin account already exists");
+  }
+  const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  const creds = readCredentials();
+  creds.admin_username = username;
+  creds.admin_password_hash = hash;
+  writeCredentials(creds);
+}
+
+/**
+ * Verify username + password against stored bcrypt hash.
+ *
+ * @param {string} username
+ * @param {string} password
+ * @returns {Promise<boolean>}
+ */
+export async function verifyAdminUser(username, password) {
+  const creds = readCredentials();
+  if (!creds.admin_username || !creds.admin_password_hash) return false;
+  if (creds.admin_username !== username) return false;
+  return bcrypt.compare(password, creds.admin_password_hash);
+}
+
+/**
+ * Create a new session token, store it in the in-memory sessions map.
+ *
+ * @param {string} username
+ * @returns {string} sessionToken
+ */
+export function createSession(username) {
+  const sessionToken = crypto.randomBytes(32).toString("hex");
+  sessions.set(sessionToken, { username, createdAt: Date.now() });
+  return sessionToken;
+}
+
+/**
+ * Destroy a session by token.
+ *
+ * @param {string} sessionToken
+ */
+export function destroySession(sessionToken) {
+  sessions.delete(sessionToken);
+}
+
+/**
+ * Express middleware that enforces authentication on every request it wraps.
+ * Accepts a diffract_session cookie set by POST /api/auth/login.
+ * Returns 401 { error: "Unauthorized" } if no valid session is found.
  *
  * @type {import("express").RequestHandler}
  */
 export function requireAuth(req, res, next) {
-  const { token } = getOrCreateToken();
-
-  // 1. Check Authorization: Bearer header
-  const authHeader = req.headers["authorization"] ?? "";
-  if (authHeader.startsWith("Bearer ")) {
-    const candidate = authHeader.slice(7).trim();
-    if (candidate === token) {
-      _recordAfterResponse(req, res, true);
-      return next();
-    }
-  }
-
-  // 2. Check diffract_session cookie
   const cookieValue = extractSessionCookie(req.headers["cookie"]);
-  if (cookieValue && cookieValue === token) {
+  if (cookieValue && sessions.has(cookieValue)) {
     _recordAfterResponse(req, res, true);
     return next();
   }
 
-  // Unauthenticated — record the attempt then reject
   _recordAfterResponse(req, res, false);
   res.status(401).json({ error: "Unauthorized" });
 }
 
 /**
  * Hook into the response finish event so we can record the final status code.
- * We import the audit buffer lazily to avoid a circular-import issue at module
- * load time (auth.js → audit.js → grpc-client.js … → nothing that imports auth).
  *
  * @param {import("express").Request}  req
  * @param {import("express").Response} res
@@ -115,7 +147,6 @@ export function requireAuth(req, res, next) {
  */
 function _recordAfterResponse(req, res, authenticated) {
   res.on("finish", () => {
-    // Dynamic import to sidestep circular dependency at startup
     import("../routes/audit.js")
       .then(({ recordApiRequest }) => {
         recordApiRequest({
