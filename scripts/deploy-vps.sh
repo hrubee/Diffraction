@@ -36,15 +36,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true
 # ╚══════════════════════════════════════════════════════════════╝
 step "Step 0/7 — Loading environment"
 
-ENV_FILE="${HOME}/.diffract/.env"
-if [ -f "$ENV_FILE" ]; then
-  info "Sourcing $ENV_FILE"
-  # shellcheck source=/dev/null
-  set -a; . "$ENV_FILE"; set +a
-else
-  info "No $ENV_FILE found — using defaults. Copy .env.example to $ENV_FILE to customise."
-fi
-
 SANDBOX_NAME="${SANDBOX_NAME:-my-assistant}"
 REPO_DIR="${REPO_DIR:-$HOME/.diffract/repo}"
 REPO_URL="${REPO_URL:-https://github.com/hrubee/Diffraction.git}"
