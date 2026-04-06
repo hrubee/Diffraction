@@ -1044,7 +1044,8 @@ async function setupOpenclaw(sandboxName, model, provider) {
     const script = buildSandboxConfigSyncScript(sandboxConfig);
     run(`cat <<'EOF_DIFFRACTION_SYNC' | openshell sandbox connect "${sandboxName}"
 ${script}
-EOF_DIFFRACTION_SYNC`, { stdio: ["ignore", "ignore", "inherit"] });
+exit
+EOF_DIFFRACTION_SYNC`, { stdio: ["ignore", "ignore", "inherit"], timeout: 10000, ignoreError: true });
   }
 
   console.log("  ✓ Diffract config synced to sandbox");
@@ -1054,7 +1055,7 @@ EOF_DIFFRACTION_SYNC`, { stdio: ["ignore", "ignore", "inherit"] });
   // try to download from npm which is blocked before policy presets are applied.
   console.log("  Starting OpenClaw gateway inside sandbox...");
   const startGwScript = `export HOME=/sandbox && nohup /usr/local/bin/diffract gateway run --bind loopback --port 18789 > /tmp/gw.log 2>&1 &`;
-  run(`echo '${startGwScript}' | openshell sandbox connect "${sandboxName}"`, { stdio: ["ignore", "ignore", "inherit"] });
+  run(`printf '%s\nexit\n' '${startGwScript}' | openshell sandbox connect "${sandboxName}"`, { stdio: ["ignore", "ignore", "inherit"], timeout: 10000, ignoreError: true });
 
   // Wait for gateway to become healthy
   let healthy = false;
