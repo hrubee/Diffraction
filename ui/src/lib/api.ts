@@ -85,18 +85,30 @@ export interface LogEntry {
   timestamp: string;
   message: string;
   source: string;
+  /** Rust module path shown in TUI detail view (e.g. "diffract_gateway::proxy") */
+  target: string;
   level: string;
+  /** Structured key-value fields from the tracing event (e.g. dst_host, action) */
+  fields: Record<string, string>;
 }
 
-export async function getSandboxLogs(name: string, lines = 200) {
-  return request<{ entries: LogEntry[] }>(
-    `/api/sandboxes/${encodeURIComponent(name)}/logs?lines=${lines}`
+export async function getSandboxLogs(
+  name: string,
+  lines = 200,
+  sinceMs = 0,
+) {
+  const qs = new URLSearchParams({ lines: String(lines) });
+  if (sinceMs > 0) qs.set("since_ms", String(sinceMs));
+  return request<{ entries: LogEntry[]; buffer_total: number }>(
+    `/api/sandboxes/${encodeURIComponent(name)}/logs?${qs.toString()}`
   );
 }
 
-// SSE stream URL (consumed directly by EventSource)
-export function watchSandboxUrl(name: string) {
-  return `${API_BASE}/api/sandboxes/${encodeURIComponent(name)}/watch`;
+// SSE stream URL (consumed directly by EventSource).
+// Pass sincems to replay only entries newer than the last fetched timestamp.
+export function watchSandboxUrl(name: string, sinceMs = 0) {
+  const qs = sinceMs > 0 ? `?since_ms=${sinceMs}` : "";
+  return `${API_BASE}/api/sandboxes/${encodeURIComponent(name)}/watch${qs}`;
 }
 
 // Active policy (permanent network rules)

@@ -11,15 +11,21 @@ async function getSandboxId(name) {
   return sandbox.id;
 }
 
-// Normalize SandboxLogLine from proto to a consistent shape for the UI
+// Normalize SandboxLogLine from proto to a consistent shape for the UI.
+// Mirrors what diffract-tui renders: timestamp, source, level, target, message, fields.
 function normalizeLine(line) {
   return {
     timestamp: line.timestamp_ms
       ? new Date(Number(line.timestamp_ms)).toISOString()
       : "",
     level: line.level || "",
-    source: line.source || line.target || "",
+    // source is "gateway" or "sandbox"; fall back to "" (TUI treats "" as "gateway")
+    source: line.source || "",
+    // target is the Rust module path shown after source in TUI detail view
+    target: line.target || "",
     message: line.message || "",
+    // structured key-value fields (e.g. dst_host, action) — kept as-is for UI rendering
+    fields: line.fields && typeof line.fields === "object" ? line.fields : {},
   };
 }
 
@@ -66,6 +72,12 @@ router.get("/:name/watch", async (req, res) => {
     Connection: "keep-alive",
   });
 
+  // Replay N recent log lines so the UI picks up history it may have missed
+  // between an initial one-shot fetch and opening the stream.
+  // The client passes since_ms to skip lines already shown.
+  const logSinceMs = parseInt(req.query.since_ms) || 0;
+  const logTailLines = logSinceMs > 0 ? 0 : 50;
+
   let stream;
   try {
     stream = grpcStream("WatchSandbox", {
@@ -73,6 +85,8 @@ router.get("/:name/watch", async (req, res) => {
       follow_status: true,
       follow_logs: true,
       follow_events: true,
+      log_tail_lines: logTailLines,
+      log_since_ms: logSinceMs,
     });
   } catch (err) {
     res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
