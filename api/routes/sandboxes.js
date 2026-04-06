@@ -1,8 +1,53 @@
 import { Router } from "express";
 import { execSync } from "child_process";
+import { readFile } from "fs/promises";
 import { grpcCall } from "../lib/grpc-client.js";
 
 const router = Router();
+
+// In-memory lock: name -> { startedAt, logFile, pid }
+const activeOnboards = new Map();
+
+/**
+ * Map UI provider name to the value onboard.js getNonInteractiveProvider() accepts.
+ * onboard.js only accepts: 'cloud' | 'ollama' | 'vllm' | 'nim'
+ */
+function mapProvider(uiProvider) {
+  const cloud = new Set(["nvidia", "openai", "anthropic", "gemini", "cloud"]);
+  if (cloud.has(uiProvider)) return "cloud";
+  if (uiProvider === "ollama") return "ollama";
+  if (uiProvider === "vllm") return "vllm";
+  if (uiProvider === "nim") return "nim";
+  return "cloud"; // safe default
+}
+
+/**
+ * Load extra env vars from /root/.env if not already in process.env.
+ * Returns an object of key->value pairs to merge.
+ * Only loads NVIDIA_API_KEY and DIFFRACT_DOMAIN — nothing else.
+ */
+async function loadDotEnv() {
+  const extras = {};
+  const needed = ["NVIDIA_API_KEY", "DIFFRACT_DOMAIN"];
+  // Skip loading file if all vars already present
+  if (needed.every((k) => process.env[k])) return extras;
+  try {
+    const raw = await readFile("/root/.env", "utf-8");
+    for (const line of raw.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq === -1) continue;
+      const key = trimmed.slice(0, eq).trim();
+      if (!needed.includes(key)) continue;
+      const val = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
+      extras[key] = val;
+    }
+  } catch {
+    // /root/.env absent on dev machines — not fatal
+  }
+  return extras;
+}
 
 // GET /api/sandboxes — list all sandboxes
 router.get("/", async (req, res) => {
@@ -14,6 +59,52 @@ router.get("/", async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/sandboxes/:name/onboard-status — tail the onboard log, report liveness
+router.get("/:name/onboard-status", async (req, res) => {
+  const { name } = req.params;
+  const lock = activeOnboards.get(name);
+  const logFile = lock?.logFile ?? `/tmp/diffract-onboard-${name}.log`;
+
+  let active = false;
+  let exitCode = null;
+  const startedAt = lock?.startedAt ?? null;
+  const elapsedMs = startedAt ? Date.now() - startedAt : null;
+
+  // Check if the child process is still alive
+  if (lock?.pid) {
+    try {
+      process.kill(lock.pid, 0); // no-op signal — throws if dead
+      active = true;
+    } catch {
+      active = false;
+    }
+  }
+
+  // Read log tail (last 100 lines)
+  let tail = [];
+  try {
+    const raw = await readFile(logFile, "utf-8");
+    const lines = raw.split("\n");
+    tail = lines.slice(-100).filter(Boolean);
+
+    // Infer exit status from log content if process is dead
+    if (!active && lock) {
+      const joined = tail.join("\n");
+      if (joined.includes("Onboard complete") || joined.includes("onboard complete")) {
+        exitCode = 0;
+      } else if (joined.includes("provisioning failed") || joined.includes("Error:") || joined.includes("process.exit")) {
+        exitCode = 1;
+      }
+      // Remove from lock once we know it's dead
+      activeOnboards.delete(name);
+    }
+  } catch {
+    // Log not yet created or already cleaned up
+  }
+
+  res.json({ active, exitCode, startedAt, elapsedMs, tail });
 });
 
 // GET /api/sandboxes/:name — get sandbox by name
@@ -37,36 +128,81 @@ router.post("/", async (req, res) => {
   try {
     const { name, spec } = req.body;
     const sandboxName = (name || "my-assistant").trim();
-    const provider = spec?.provider || "cloud";
+
+    // Concurrency lock — reject duplicate in-flight onboards
+    if (activeOnboards.has(sandboxName)) {
+      const existing = activeOnboards.get(sandboxName);
+      return res.status(409).json({
+        error: `Sandbox '${sandboxName}' onboard already in progress`,
+        startedAt: existing.startedAt,
+        logFile: existing.logFile,
+      });
+    }
+
+    // Map UI provider name → onboard provider type
+    const uiProvider = spec?.provider || "cloud";
+    const provider = mapProvider(uiProvider);
     const model = spec?.model || "nvidia/nemotron-3-super-120b-a12b";
 
-    // Run diffract onboard non-interactively
-    // This handles everything: sandbox creation, browser install, gateway start, policies
-    const env = [
-      `DIFFRACTION_NON_INTERACTIVE=1`,
-      `DIFFRACTION_SANDBOX_NAME=${sandboxName}`,
-      `DIFFRACTION_PROVIDER=${provider}`,
-      `DIFFRACTION_MODEL=${model}`,
-    ].join(" ");
+    // Load VPS env vars (NVIDIA_API_KEY, DIFFRACT_DOMAIN) if not in process.env
+    const dotEnv = await loadDotEnv();
 
-    const cmd = `export PATH="$PATH:$HOME/.local/bin"; export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; cd /root/diffract && ${env} node cli/bin/diffract.js onboard --non-interactive 2>&1`;
+    const envVars = {
+      ...dotEnv,
+      ...Object.fromEntries(
+        ["NVIDIA_API_KEY", "DIFFRACT_DOMAIN"]
+          .filter((k) => process.env[k])
+          .map((k) => [k, process.env[k]])
+      ),
+      DIFFRACTION_NON_INTERACTIVE: "1",
+      DIFFRACTION_SANDBOX_NAME: sandboxName,
+      DIFFRACTION_PROVIDER: provider,
+      DIFFRACTION_MODEL: model,
+    };
 
-    // Onboard can take several minutes — run async and return immediately with status
-    const { spawn: spawnProc } = await import("child_process");
+    // Policy presets — if UI sent any, enable custom mode
+    const presets = Array.isArray(spec?.policy_presets) ? spec.policy_presets.filter(Boolean) : [];
+    if (presets.length > 0) {
+      envVars.DIFFRACTION_POLICY_MODE = "custom";
+      envVars.DIFFRACTION_POLICY_PRESETS = presets.join(",");
+    }
+
+    // Build shell env prefix (values are shell-escaped, keys are validated above)
+    const envPrefix = Object.entries(envVars)
+      .map(([k, v]) => `${k}=${shellEscape(String(v))}`)
+      .join(" ");
+
     const logFile = `/tmp/diffract-onboard-${sandboxName}.log`;
 
+    // Correct VPS repo path: /root/.diffract/repo (not /root/diffract)
+    const cmd = [
+      `export PATH="$PATH:$HOME/.local/bin"`,
+      `export NVM_DIR="$HOME/.nvm"`,
+      `. "$NVM_DIR/nvm.sh"`,
+      `cd /root/.diffract/repo`,
+      `${envPrefix} node cli/bin/diffract.js onboard --non-interactive`,
+    ].join(" && ");
+
+    const { spawn: spawnProc } = await import("child_process");
     const child = spawnProc("bash", ["-c", `${cmd} > ${logFile} 2>&1`], {
       detached: true,
       stdio: "ignore",
     });
     child.unref();
 
-    // Return immediately — the UI can poll sandbox status
+    // Register in-memory lock with child PID
+    activeOnboards.set(sandboxName, {
+      startedAt: Date.now(),
+      logFile,
+      pid: child.pid,
+    });
+
     res.status(202).json({
       name: sandboxName,
       status: "provisioning",
-      message: "Sandbox creation started. This takes 3-5 minutes. Check the sandbox detail page for status.",
+      message: "Sandbox creation started. This takes 3-5 minutes.",
       logFile,
+      pid: child.pid,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -145,5 +281,13 @@ router.post("/:name/restart-gateway", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+/**
+ * Shell-escape a value for safe inclusion in a bash env prefix.
+ * Wraps in single quotes and escapes internal single quotes.
+ */
+function shellEscape(val) {
+  return "'" + val.replace(/'/g, "'\\''") + "'";
+}
 
 export default router;
