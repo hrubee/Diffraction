@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { listSandboxes, deleteSandbox } from "@/lib/api";
 import type { Sandbox } from "@/lib/api";
@@ -9,11 +9,22 @@ import StatusBadge from "@/components/status-badge";
 export default function SandboxesPage() {
   const [sandboxes, setSandboxes] = useState<Sandbox[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState<Set<string>>(new Set());
+  const deletingRef = useRef<Set<string>>(new Set());
 
   const load = async () => {
     try {
       const data = await listSandboxes();
       setSandboxes(data.sandboxes);
+      // Clear any names from deleting set that are no longer in the list
+      const names = new Set(data.sandboxes.map((s: Sandbox) => s.name));
+      const nowGone = [...deletingRef.current].filter((n) => !names.has(n));
+      if (nowGone.length > 0) {
+        const next = new Set(deletingRef.current);
+        nowGone.forEach((n) => next.delete(n));
+        deletingRef.current = next;
+        setDeleting(new Set(next));
+      }
     } catch {}
     setLoading(false);
   };
@@ -27,8 +38,42 @@ export default function SandboxesPage() {
   const handleDelete = async (name: string) => {
     if (!confirm(`Delete sandbox "${name}"? This cannot be undone.`)) return;
     try {
-      await deleteSandbox(name);
-      load();
+      const result = await deleteSandbox(name);
+      if (!result.deleted) {
+        alert("Delete failed — server did not confirm removal.");
+        return;
+      }
+      // Mark as pending-delete
+      const next = new Set(deletingRef.current);
+      next.add(name);
+      deletingRef.current = next;
+      setDeleting(new Set(next));
+
+      // Poll every 2s up to 60s until gone
+      const deadline = Date.now() + 60_000;
+      const poll = setInterval(async () => {
+        try {
+          const data = await listSandboxes();
+          setSandboxes(data.sandboxes);
+          const stillThere = data.sandboxes.some((s: Sandbox) => s.name === name);
+          if (!stillThere) {
+            clearInterval(poll);
+            const next2 = new Set(deletingRef.current);
+            next2.delete(name);
+            deletingRef.current = next2;
+            setDeleting(new Set(next2));
+          } else if (Date.now() >= deadline) {
+            clearInterval(poll);
+            const next2 = new Set(deletingRef.current);
+            next2.delete(name);
+            deletingRef.current = next2;
+            setDeleting(new Set(next2));
+            alert("Delete still pending — refresh to check.");
+          }
+        } catch {
+          // network hiccup — keep polling
+        }
+      }, 2000);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Delete failed");
     }
@@ -91,36 +136,52 @@ export default function SandboxesPage() {
               </tr>
             </thead>
             <tbody>
-              {sandboxes.map((sb) => (
-                <tr
-                  key={sb.id || sb.name}
-                  className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
-                >
-                  <td className="p-3">
-                    <Link
-                      href={`/sandboxes/${sb.name}`}
-                      className="text-indigo-400 hover:text-indigo-300 font-medium"
-                    >
-                      {sb.name}
-                    </Link>
-                  </td>
-                  <td className="p-3">
-                    <StatusBadge phase={sb.phase} />
-                  </td>
-                  <td className="p-3 text-zinc-400">{age(sb.created_at_ms)}</td>
-                  <td className="p-3 text-zinc-400">
-                    v{sb.current_policy_version || 0}
-                  </td>
-                  <td className="p-3 text-right">
-                    <button
-                      onClick={() => handleDelete(sb.name)}
-                      className="text-xs text-red-400 hover:text-red-300"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {sandboxes.map((sb) => {
+                const isPendingDelete = deleting.has(sb.name);
+                return (
+                  <tr
+                    key={sb.id || sb.name}
+                    className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors${isPendingDelete ? " opacity-60" : ""}`}
+                  >
+                    <td className="p-3">
+                      <Link
+                        href={`/sandboxes/${sb.name}`}
+                        className="text-indigo-400 hover:text-indigo-300 font-medium"
+                      >
+                        {sb.name}
+                      </Link>
+                    </td>
+                    <td className="p-3">
+                      <StatusBadge phase={sb.phase} />
+                    </td>
+                    <td className="p-3 text-zinc-400">
+                      {isPendingDelete ? (
+                        <span className="inline-flex items-center gap-1.5 text-zinc-500">
+                          <svg className="animate-spin w-3 h-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                          </svg>
+                          Deleting
+                        </span>
+                      ) : (
+                        age(sb.created_at_ms)
+                      )}
+                    </td>
+                    <td className="p-3 text-zinc-400">
+                      v{sb.current_policy_version || 0}
+                    </td>
+                    <td className="p-3 text-right">
+                      <button
+                        onClick={() => handleDelete(sb.name)}
+                        disabled={isPendingDelete}
+                        className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
