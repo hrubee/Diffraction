@@ -139,21 +139,29 @@ router.post("/", async (req, res) => {
       });
     }
 
+    // Require NVIDIA API key from the form submission
+    const nvidiaApiKey = spec?.nvidia_api_key?.trim();
+    if (!nvidiaApiKey) {
+      return res.status(400).json({ error: "NVIDIA API key is required." });
+    }
+
     // Map UI provider name → onboard provider type
     const uiProvider = spec?.provider || "cloud";
     const provider = mapProvider(uiProvider);
     const model = spec?.model || "nvidia/nemotron-3-super-120b-a12b";
 
-    // Load VPS env vars (NVIDIA_API_KEY, DIFFRACT_DOMAIN) if not in process.env
+    // Load VPS env vars (DIFFRACT_DOMAIN only) — NVIDIA_API_KEY comes from form
     const dotEnv = await loadDotEnv();
 
     const envVars = {
       ...dotEnv,
       ...Object.fromEntries(
-        ["NVIDIA_API_KEY", "DIFFRACT_DOMAIN"]
+        ["DIFFRACT_DOMAIN"]
           .filter((k) => process.env[k])
           .map((k) => [k, process.env[k]])
       ),
+      // Form-supplied key always wins — never fall back to /root/.env for this
+      NVIDIA_API_KEY: nvidiaApiKey,
       DIFFRACTION_NON_INTERACTIVE: "1",
       DIFFRACTION_SANDBOX_NAME: sandboxName,
       DIFFRACTION_PROVIDER: provider,

@@ -47,6 +47,8 @@ export default function NewSandboxPage() {
 
   const [name, setName] = useState("my-assistant");
   const [nameError, setNameError] = useState<string | null>(null);
+  const [nvidiaApiKey, setNvidiaApiKey] = useState("");
+  const [nvidiaApiKeyError, setNvidiaApiKeyError] = useState<string | null>(null);
   const [selectedPresets, setSelectedPresets] = useState<Set<string>>(
     new Set()
   );
@@ -71,11 +73,20 @@ export default function NewSandboxPage() {
     });
   };
 
+  const handleNvidiaApiKeyChange = (value: string) => {
+    setNvidiaApiKey(value);
+    setNvidiaApiKeyError(value.trim() ? null : "NVIDIA API key is required.");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const err = validateName(name);
     if (err) {
       setNameError(err);
+      return;
+    }
+    if (!nvidiaApiKey.trim()) {
+      setNvidiaApiKeyError("NVIDIA API key is required.");
       return;
     }
     setSubmitError(null);
@@ -85,6 +96,7 @@ export default function NewSandboxPage() {
       const spec: Record<string, unknown> = {
         provider: inference.provider,
         model: inference.model,
+        nvidia_api_key: nvidiaApiKey.trim(),
       };
       if (selectedPresets.size > 0) {
         spec.policy_presets = Array.from(selectedPresets);
@@ -174,6 +186,52 @@ export default function NewSandboxPage() {
             ) : (
               <p id="name-hint" className="text-xs text-zinc-600 mt-1">
                 Lowercase letters, numbers, and hyphens only. Max 30 characters.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* NVIDIA API Key */}
+        <div className="bg-zinc-800/30 border border-zinc-700/50 rounded-lg p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-zinc-400 uppercase tracking-wider">
+            Credentials
+          </h2>
+          <div className="space-y-1.5">
+            <label
+              htmlFor="nvidia-api-key"
+              className="block text-sm font-medium text-zinc-300"
+            >
+              NVIDIA API key
+            </label>
+            <input
+              id="nvidia-api-key"
+              type="password"
+              value={nvidiaApiKey}
+              onChange={(e) => handleNvidiaApiKeyChange(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="nvapi-..."
+              disabled={submitting}
+              aria-describedby={nvidiaApiKeyError ? "nvidia-key-error" : "nvidia-key-hint"}
+              aria-invalid={nvidiaApiKeyError ? "true" : undefined}
+              required
+              className={[
+                "w-full bg-zinc-900 border rounded-md px-3 py-2 text-sm font-mono",
+                "placeholder-zinc-600 text-zinc-100",
+                "focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent",
+                "disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
+                nvidiaApiKeyError
+                  ? "border-red-500/60"
+                  : "border-zinc-700 hover:border-zinc-600",
+              ].join(" ")}
+            />
+            {nvidiaApiKeyError ? (
+              <p id="nvidia-key-error" className="text-xs text-red-400 mt-1">
+                {nvidiaApiKeyError}
+              </p>
+            ) : (
+              <p id="nvidia-key-hint" className="text-xs text-zinc-600 mt-1">
+                Required for cloud inference. Injected at the network layer — never stored in the sandbox.
               </p>
             )}
           </div>
@@ -300,7 +358,7 @@ export default function NewSandboxPage() {
         <div className="flex items-center gap-3 pt-1">
           <button
             type="submit"
-            disabled={submitting || !!nameError}
+            disabled={submitting || !!nameError || !nvidiaApiKey.trim()}
             className={[
               "inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium",
               "bg-indigo-600 text-white transition-colors",
