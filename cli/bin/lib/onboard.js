@@ -724,6 +724,11 @@ async function createSandbox(gpu) {
 async function installBrowser(sandboxName) {
   step(6, 8, "Configuring browser in sandbox");
 
+  if (process.env.DIFFRACTION_SKIP_BROWSER === "1") {
+    console.log("  ✓ Browser step skipped (DIFFRACTION_SKIP_BROWSER=1)");
+    return;
+  }
+
   const sandboxExec = (cmd) => {
     const b64 = Buffer.from(cmd).toString("base64");
     return `echo ${b64} | base64 -d | openshell sandbox connect ${JSON.stringify(sandboxName)}`;
@@ -734,7 +739,7 @@ async function installBrowser(sandboxName) {
   // Chromium is baked into the Docker image at build time (/opt/chromium-headless).
   // Only verify the binary is present — never attempt a runtime download, which
   // would hang because the sandbox deny-by-default policy blocks cdn.playwright.dev.
-  const exists = runCapture(sandboxExec(`test -x ${BAKED_PATH} && echo yes || echo no`), { ignoreError: true });
+  const exists = runCapture(sandboxExec(`test -x ${BAKED_PATH} && echo yes || echo no`), { ignoreError: true, timeout: 10000 });
   if ((exists || "").trim() === "yes") {
     try {
       configureBrowser(sandboxName, sandboxExec, BAKED_PATH);
