@@ -49,8 +49,8 @@ export default function SandboxesPage() {
       deletingRef.current = next;
       setDeleting(new Set(next));
 
-      // Poll every 2s up to 60s until gone
-      const deadline = Date.now() + 60_000;
+      // Poll every 15s up to 30min until gone (k8s teardown is async)
+      const deadline = Date.now() + 1_800_000;
       const poll = setInterval(async () => {
         try {
           const data = await listSandboxes();
@@ -73,7 +73,7 @@ export default function SandboxesPage() {
         } catch {
           // network hiccup — keep polling
         }
-      }, 2000);
+      }, 15_000);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Delete failed");
     }
