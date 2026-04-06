@@ -18,9 +18,9 @@
 			"Diffraction-ede9",
 			"Diffraction-1270"
 		],
-		"status": "active",
+		"status": "completed",
 		"createdAt": "2026-04-05T05:17:33.203Z",
-		"completedAt": null
+		"completedAt": "2026-04-05T18:14:25.140Z"
 	},
 	{
 		"id": "group-64689a1d",
@@ -29,9 +29,9 @@
 			"Diffraction-7392",
 			"Diffraction-f2f3"
 		],
-		"status": "active",
+		"status": "completed",
 		"createdAt": "2026-04-05T10:59:58.570Z",
-		"completedAt": null
+		"completedAt": "2026-04-05T18:14:25.232Z"
 	},
 	{
 		"id": "group-151c4864",
@@ -39,9 +39,9 @@
 		"memberIssueIds": [
 			"Diffraction-d0c9"
 		],
-		"status": "active",
+		"status": "completed",
 		"createdAt": "2026-04-05T14:48:15.675Z",
-		"completedAt": null
+		"completedAt": "2026-04-05T18:14:25.277Z"
 	},
 	{
 		"id": "group-338d5856",
@@ -49,8 +49,18 @@
 		"memberIssueIds": [
 			"Diffraction-b497"
 		],
-		"status": "active",
+		"status": "completed",
 		"createdAt": "2026-04-05T17:29:36.016Z",
+		"completedAt": "2026-04-05T18:14:25.321Z"
+	},
+	{
+		"id": "group-56416480",
+		"name": "sandbox-logs-fix",
+		"memberIssueIds": [
+			"Diffraction-c3e3"
+		],
+		"status": "active",
+		"createdAt": "2026-04-06T05:23:09.443Z",
 		"completedAt": null
 	}
 ]
