@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { getSandbox, getDraftPolicy } from "@/lib/api";
-import type { Sandbox, DraftChunk } from "@/lib/api";
+import { getSandbox, getDraftPolicy, getOnboardStatus } from "@/lib/api";
+import type { Sandbox, DraftChunk, OnboardStatus } from "@/lib/api";
 import StatusBadge from "@/components/status-badge";
 import LogViewer from "@/components/log-viewer";
 import ChatPanel from "@/components/chat-panel";
@@ -12,6 +12,66 @@ import DraftPolicyPanel from "@/components/draft-policy-panel";
 import ActivePolicyPanel from "@/components/active-policy-panel";
 
 type Tab = "overview" | "logs" | "chat" | "policy";
+type PageState = "provisioning" | "error" | "ready";
+
+function formatElapsed(ms: number | null): string {
+  if (ms == null || ms < 0) return "0s";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${m}m ${rem}s`;
+}
+
+function ProvisioningPanel({
+  name,
+  status,
+}: {
+  name: string;
+  status: OnboardStatus | null;
+}) {
+  const failed =
+    status != null && !status.active && status.exitCode != null && status.exitCode !== 0;
+  const tail = status?.tail?.slice(-20) ?? [];
+
+  return (
+    <div className="flex flex-col items-center justify-start pt-12 gap-6">
+      <div className="bg-zinc-800/40 border border-zinc-700/50 rounded-xl p-6 w-full max-w-2xl space-y-4">
+        <div className="flex items-center gap-3">
+          {failed ? (
+            <span className="w-3 h-3 rounded-full bg-red-500 shrink-0" />
+          ) : (
+            <span className="w-3 h-3 rounded-full bg-amber-400 shrink-0 animate-pulse" />
+          )}
+          <div>
+            <p className="text-sm font-semibold text-zinc-200">
+              {failed ? "Provisioning failed" : `Provisioning ${name}…`}
+            </p>
+            {!failed && (
+              <p className="text-xs text-zinc-500">
+                Elapsed: {formatElapsed(status?.elapsedMs ?? null)}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {tail.length > 0 && (
+          <div className="bg-zinc-900/60 border border-zinc-700/40 rounded-md p-3 overflow-y-auto max-h-64">
+            <pre className="text-xs text-zinc-400 whitespace-pre-wrap font-mono leading-5">
+              {tail.join("\n")}
+            </pre>
+          </div>
+        )}
+
+        {failed && (
+          <p className="text-xs text-red-400">
+            Sandbox could not be created. Check the log above for details.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function SandboxDetailPage() {
   const params = useParams();
@@ -22,9 +82,17 @@ export default function SandboxDetailPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
+  const [pageState, setPageState] = useState<PageState>("provisioning");
+  const [onboardStatus, setOnboardStatus] = useState<OnboardStatus | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    const load = async () => {
+    let stopped = false;
+
+    const poll = async () => {
+      if (stopped) return;
+
+      // Try to fetch the sandbox from gRPC
       try {
         const [sb, draft] = await Promise.all([
           getSandbox(name),
@@ -34,19 +102,72 @@ export default function SandboxDetailPage() {
             last_analyzed_at_ms: 0,
           })),
         ]);
+        if (stopped) return;
         setSandbox(sb);
         setDraftChunks(draft.chunks);
         setPendingCount(
           draft.chunks.filter((c: DraftChunk) => c.status === "pending").length
         );
+        setPageState("ready");
         setError(null);
+        // Stop polling — sandbox is ready
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+        return;
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load");
+        const msg = err instanceof Error ? err.message : String(err);
+        const is404 =
+          msg.includes("not found") ||
+          msg.includes("NOT_FOUND") ||
+          msg.includes("404");
+
+        if (!is404) {
+          // Genuine error, not just "not provisioned yet"
+          if (!stopped) {
+            setError(msg);
+            setPageState("ready");
+          }
+          return;
+        }
+      }
+
+      // Sandbox not found — check onboard status
+      try {
+        const os = await getOnboardStatus(name);
+        if (stopped) return;
+        setOnboardStatus(os);
+
+        if (!os.active && os.exitCode != null && os.exitCode !== 0) {
+          // Failed
+          setPageState("error");
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+        } else {
+          setPageState("provisioning");
+        }
+      } catch {
+        // onboard-status failed too — keep showing provisioning
+        if (!stopped) setPageState("provisioning");
       }
     };
-    load();
-    const interval = setInterval(load, 5000);
-    return () => clearInterval(interval);
+
+    // Initial poll
+    poll();
+
+    // Set up 3s polling interval
+    intervalRef.current = setInterval(poll, 3000);
+
+    return () => {
+      stopped = true;
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
   }, [name]);
 
   const tabs: { key: Tab; label: string; badge?: number }[] = [
@@ -55,6 +176,25 @@ export default function SandboxDetailPage() {
     { key: "chat", label: "Chat" },
     { key: "policy", label: "Policy", badge: pendingCount || undefined },
   ];
+
+  // Show provisioning/error panel while sandbox not ready
+  if (pageState === "provisioning" || pageState === "error") {
+    return (
+      <div className="p-6 flex flex-col h-full">
+        <div className="mb-4">
+          <div className="flex items-center gap-2 text-sm text-zinc-500 mb-1">
+            <Link href="/sandboxes" className="hover:text-zinc-300">
+              Sandboxes
+            </Link>
+            <span>/</span>
+            <span className="text-zinc-300">{name}</span>
+          </div>
+          <h1 className="text-2xl font-bold">{name}</h1>
+        </div>
+        <ProvisioningPanel name={name} status={onboardStatus} />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 flex flex-col h-full">

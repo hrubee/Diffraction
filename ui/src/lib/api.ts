@@ -215,6 +215,21 @@ export async function approveAllDraftChunks(
   );
 }
 
+// Onboard status
+export interface OnboardStatus {
+  active: boolean;
+  exitCode: number | null;
+  startedAt: number | null;
+  elapsedMs: number | null;
+  tail: string[];
+}
+
+export async function getOnboardStatus(name: string) {
+  return request<OnboardStatus>(
+    `/api/sandboxes/${encodeURIComponent(name)}/onboard-status`
+  );
+}
+
 // Fleet status
 export interface FleetSandbox {
   name: string;
