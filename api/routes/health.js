@@ -21,7 +21,7 @@ router.get("/fleet", async (_req, res) => {
     let gateway_healthy = false;
     try {
       const health = await grpcCall("Health", {});
-      gateway_healthy = health.status === "SERVING";
+      gateway_healthy = health.status === "SERVICE_STATUS_HEALTHY";
     } catch {
       gateway_healthy = false;
     }
