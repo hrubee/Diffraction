@@ -44,6 +44,18 @@ RUN npm install -g openclaw@${OPENCLAW_VERSION} \
 # Install PyYAML for blueprint runner
 RUN pip3 install --break-system-packages pyyaml
 
+# Bake Playwright + Chromium headless shell into the image at build time.
+# Runtime install is not possible: the sandbox deny-by-default policy blocks
+# cdn.playwright.dev. The binary is copied to /opt/chromium-headless so that
+# the sandbox user (drwx------) can access it without hitting /root/.cache.
+RUN npm install -g playwright@latest \
+    && npx playwright install chromium \
+    && npx playwright install-deps chromium \
+    && CHROME=$(find /root/.cache/ms-playwright -name chrome-headless-shell -type f | head -1) \
+    && CHROME_DIR=$(dirname "$CHROME") \
+    && cp -r "$CHROME_DIR" /opt/chromium-headless \
+    && chmod -R 755 /opt/chromium-headless
+
 # Copy plugin and policies into the sandbox
 # These are staged into the build context by onboard.js
 COPY diffract/dist/ /opt/diffract/dist/

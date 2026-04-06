@@ -722,56 +722,29 @@ async function createSandbox(gpu) {
 // ── Step 3.5: Browser install ────────────────────────────────────
 
 async function installBrowser(sandboxName) {
-  step(6, 8, "Installing browser in sandbox");
+  step(6, 8, "Configuring browser in sandbox");
 
   const sandboxExec = (cmd) => {
     const b64 = Buffer.from(cmd).toString("base64");
     return `echo ${b64} | base64 -d | openshell sandbox connect ${JSON.stringify(sandboxName)}`;
   };
 
-  try {
-    // 1. Install Playwright + Chromium headless shell (real binary, not Ubuntu snap stub)
-    console.log("  Installing Chromium via Playwright (this may take a minute)...");
-    runCapture(sandboxExec(`npx --yes playwright install chromium 2>&1`), { ignoreError: false });
+  const BAKED_PATH = "/opt/chromium-headless/chrome-headless-shell";
 
-    // 2. Install system dependencies (libgbm, xvfb, fonts, etc.)
-    console.log("  Installing browser system dependencies...");
-    runCapture(sandboxExec(`npx playwright install-deps chromium 2>&1`), { ignoreError: false });
-
-    // 3. Copy headless shell to an accessible location (/opt/chromium-headless)
-    //    Playwright installs to /root/.cache which the sandbox user can't access (drwx------).
-    console.log("  Setting up browser for sandbox user...");
-    const findResult = runCapture(
-      sandboxExec(`find /root/.cache/ms-playwright -name "chrome-headless-shell" -type f 2>/dev/null`),
-      { ignoreError: true }
-    );
-    const headlessPath = (findResult || "").trim().split("\n")[0];
-    if (!headlessPath) {
-      // Fallback: try full chromium
-      const chromePath = runCapture(
-        sandboxExec(`find /root/.cache/ms-playwright -name "chrome" -type f -not -path "*/headless*" 2>/dev/null`),
-        { ignoreError: true }
-      );
-      if (chromePath && chromePath.trim()) {
-        const chromeDir = path.dirname(chromePath.trim().split("\n")[0]);
-        runCapture(sandboxExec(`bash -c "cp -r ${chromeDir} /opt/chromium && chmod -R 755 /opt/chromium"`), { ignoreError: false });
-        configureBrowser(sandboxName, sandboxExec, "/opt/chromium/chrome");
-      } else {
-        console.error("  WARNING: Could not find Chromium binary after install");
-      }
-    } else {
-      const shellDir = path.dirname(headlessPath);
-      runCapture(sandboxExec(`bash -c "cp -r ${shellDir} /opt/chromium-headless && chmod -R 755 /opt/chromium-headless"`), { ignoreError: false });
-      configureBrowser(sandboxName, sandboxExec, "/opt/chromium-headless/chrome-headless-shell");
+  // Chromium is baked into the Docker image at build time (/opt/chromium-headless).
+  // Only verify the binary is present — never attempt a runtime download, which
+  // would hang because the sandbox deny-by-default policy blocks cdn.playwright.dev.
+  const exists = runCapture(sandboxExec(`test -x ${BAKED_PATH} && echo yes || echo no`), { ignoreError: true });
+  if ((exists || "").trim() === "yes") {
+    try {
+      configureBrowser(sandboxName, sandboxExec, BAKED_PATH);
+      console.log("  ✓ Chromium browser configured");
+    } catch (err) {
+      console.error(`  WARNING: Browser configuration failed: ${err.message}`);
     }
-
-    console.log("  ✓ Chromium browser installed and configured");
-  } catch (err) {
-    // Non-fatal — sandbox works fine without a browser
-    console.error(`  WARNING: Browser install failed: ${err.message}`);
-    console.error("  The sandbox will work without a browser. You can install manually later:");
-    console.error(`    openshell sandbox connect ${sandboxName}  # then: npx playwright install chromium`);
-    console.error(`    openshell sandbox connect ${sandboxName}  # then: npx playwright install-deps chromium`);
+  } else {
+    console.error(`  WARNING: Chromium not found at ${BAKED_PATH} (image may predate baked-in Chromium)`);
+    console.error("  The sandbox will work without a browser. Rebuild the image to include Chromium.");
   }
 }
 

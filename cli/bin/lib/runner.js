@@ -51,6 +51,7 @@ function runCapture(cmd, opts = {}) {
       cwd: ROOT,
       env: { ...process.env, ...opts.env },
       stdio: ["pipe", "pipe", "pipe"],
+      timeout: opts.timeout,
       ...opts,
     }).trim();
   } catch (err) {
