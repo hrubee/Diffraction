@@ -4,19 +4,35 @@ import { useState, useEffect } from "react";
 
 export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
   const [iframeKey, setIframeKey] = useState(0);
+  // resolvedFor tracks which sandboxName the current token was fetched for.
+  // tokenLoading is derived: true whenever resolvedFor !== sandboxName.
+  const [resolvedFor, setResolvedFor] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [tokenLoading, setTokenLoading] = useState(true);
+  const [tokenError, setTokenError] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const chatUrl = `/sandboxes/${sandboxName}/diffract_chat/`;
+  const tokenLoading = resolvedFor !== sandboxName;
+  const baseChatUrl = `/sandboxes/${sandboxName}/diffract_chat/`;
+  const chatUrl = token ? `${baseChatUrl}?token=${encodeURIComponent(token)}` : baseChatUrl;
 
   useEffect(() => {
-    setTokenLoading(true);
+    let cancelled = false;
     fetch("/api/gateway-token", { credentials: "include" })
       .then((r) => r.json())
-      .then((data) => setToken(data.token ?? null))
-      .catch(() => setToken(null))
-      .finally(() => setTokenLoading(false));
+      .then((data) => {
+        if (cancelled) return;
+        const t = data.token ?? null;
+        setToken(t);
+        setTokenError(!t);
+        setResolvedFor(sandboxName);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setToken(null);
+        setTokenError(true);
+        setResolvedFor(sandboxName);
+      });
+    return () => { cancelled = true; };
   }, [sandboxName]);
 
   function copyToken() {
@@ -51,6 +67,12 @@ export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
           </span>
         )}
 
+        {!tokenLoading && tokenError && (
+          <span className="flex items-center gap-1 text-red-400 bg-red-950/40 border border-red-700/50 px-2 py-0.5 rounded text-xs">
+            Token fetch failed — chat may not load
+          </span>
+        )}
+
         <div className="flex items-center gap-2 ml-auto">
           <button
             onClick={() => setIframeKey((k) => k + 1)}
@@ -71,13 +93,19 @@ export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
         </div>
       </div>
 
-      {/* OpenClaw UI iframe */}
-      <iframe
-        key={iframeKey}
-        src={chatUrl}
-        className="flex-1 w-full rounded-lg border border-zinc-700/50 bg-zinc-950"
-        allow="clipboard-write; clipboard-read"
-      />
+      {/* OpenClaw UI iframe — blocked until token is resolved */}
+      {tokenLoading ? (
+        <div className="flex-1 w-full rounded-lg border border-zinc-700/50 bg-zinc-950 flex items-center justify-center text-zinc-500 text-sm">
+          Loading…
+        </div>
+      ) : (
+        <iframe
+          key={iframeKey}
+          src={chatUrl}
+          className="flex-1 w-full rounded-lg border border-zinc-700/50 bg-zinc-950"
+          allow="clipboard-write; clipboard-read"
+        />
+      )}
     </div>
   );
 }
