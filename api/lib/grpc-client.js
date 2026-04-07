@@ -16,6 +16,46 @@ const SERVICE_PREFIX = "/openshell.v1.OpenShell";
 
 let _client = null;
 let _serviceDef = null;
+let _watcher = null;
+let _debounceTimer = null;
+
+/**
+ * Watch the mTLS cert directory and rebuild the gRPC client when certs change.
+ * Debounced 1s to coalesce burst writes during cert rotation.
+ */
+function startCertWatcher(certDir) {
+  if (_watcher) return; // already watching
+  try {
+    _watcher = fs.watch(certDir, { recursive: false }, (_event, filename) => {
+      if (!filename || !["ca.crt", "tls.key", "tls.crt"].includes(filename))
+        return;
+      clearTimeout(_debounceTimer);
+      _debounceTimer = setTimeout(() => {
+        console.log(
+          `[grpc-client] cert change detected (${filename}), hot-reloading mTLS credentials`
+        );
+        if (_client) {
+          _client.close();
+          _client = null;
+          _serviceDef = null;
+        }
+        // Rebuild eagerly so the next call doesn't pay the latency
+        try {
+          getGrpcClient();
+        } catch (err) {
+          console.error("[grpc-client] failed to rebuild client after cert change:", err.message);
+        }
+      }, 1000);
+    });
+    _watcher.on("error", (err) => {
+      console.error("[grpc-client] cert watcher error:", err.message);
+      _watcher = null;
+    });
+  } catch (err) {
+    // Non-fatal: hot-reload unavailable, but client still works
+    console.warn("[grpc-client] could not start cert watcher:", err.message);
+  }
+}
 
 /** Read gateway endpoint + mTLS certs from ~/.config/openshell/gateways/ */
 export function getGatewayConfig() {
@@ -93,6 +133,7 @@ export function getGrpcClient() {
   const host = `${url.hostname}:${url.port || "8080"}`;
 
   _client = new grpc.Client(host, tlsCreds, {});
+  startCertWatcher(certDir);
   return { client: _client, svc: _serviceDef };
 }
 
@@ -138,8 +179,14 @@ export function grpcStream(method, request = {}) {
   );
 }
 
-/** Reset the cached client (for reconnection). */
+/** Reset the cached client (for reconnection). Stops the cert watcher too. */
 export function resetClient() {
+  clearTimeout(_debounceTimer);
+  _debounceTimer = null;
+  if (_watcher) {
+    _watcher.close();
+    _watcher = null;
+  }
   if (_client) {
     _client.close();
     _client = null;
