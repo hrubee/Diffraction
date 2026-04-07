@@ -215,7 +215,7 @@ export async function approveAllDraftChunks(
   );
 }
 
-// Onboard status
+// Onboard status (legacy polling — kept for backwards compat)
 export interface OnboardStatus {
   active: boolean;
   exitCode: number | null;
@@ -228,6 +228,41 @@ export async function getOnboardStatus(name: string) {
   return request<OnboardStatus>(
     `/api/sandboxes/${encodeURIComponent(name)}/onboard-status`
   );
+}
+
+// Job / SSE event types
+export interface OnboardJob {
+  id: string;
+  sandbox_name: string;
+  status: "queued" | "running" | "done" | "failed";
+  started_at: number | null;
+  finished_at: number | null;
+  exit_code: number | null;
+  log_path: string | null;
+}
+
+export interface JobStepEvent {
+  id: number;
+  job_id: string;
+  step: string;
+  /** "skipped" | "started" | "complete" | "failed" */
+  status: string;
+  ts: string;
+  error?: string | null;
+}
+
+export type SseMessage =
+  | { type: "job_state"; job: OnboardJob }
+  | { type: "step_event" } & JobStepEvent
+  | { type: "job_done"; status: string; exit_code: number | null; finished_at: number | null }
+  | { type: "no_job"; sandbox: string };
+
+/**
+ * Returns the SSE endpoint URL for onboard job events.
+ * Consume with `new EventSource(url, { withCredentials: true })`.
+ */
+export function jobEventsUrl(sandboxName: string): string {
+  return `${API_BASE}/api/events?sandbox=${encodeURIComponent(sandboxName)}`;
 }
 
 // Fleet status

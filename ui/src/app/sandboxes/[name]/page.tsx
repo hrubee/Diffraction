@@ -3,8 +3,8 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { getSandbox, getDraftPolicy, getOnboardStatus } from "@/lib/api";
-import type { Sandbox, DraftChunk, OnboardStatus } from "@/lib/api";
+import { getSandbox, getDraftPolicy, jobEventsUrl } from "@/lib/api";
+import type { Sandbox, DraftChunk, OnboardStatus, SseMessage } from "@/lib/api";
 import StatusBadge from "@/components/status-badge";
 import LogViewer from "@/components/log-viewer";
 import ChatPanel from "@/components/chat-panel";
@@ -26,13 +26,16 @@ function formatElapsed(ms: number | null): string {
 function ProvisioningPanel({
   name,
   status,
+  stepLog,
 }: {
   name: string;
   status: OnboardStatus | null;
+  stepLog: string[];
 }) {
   const failed =
     status != null && !status.active && status.exitCode != null && status.exitCode !== 0;
-  const tail = status?.tail?.slice(-20) ?? [];
+  // Prefer structured step log from SSE; fall back to raw log tail
+  const tail = stepLog.length > 0 ? stepLog.slice(-20) : (status?.tail?.slice(-20) ?? []);
 
   return (
     <div className="flex flex-col items-center justify-start pt-12 gap-6">
@@ -84,39 +87,57 @@ export default function SandboxDetailPage() {
   const [restarting, setRestarting] = useState(false);
   const [pageState, setPageState] = useState<PageState>("provisioning");
   const [onboardStatus, setOnboardStatus] = useState<OnboardStatus | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Accumulated log lines from SSE step events for the provisioning panel
+  const [stepLog, setStepLog] = useState<string[]>([]);
+  const esRef = useRef<EventSource | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Attempt to load the sandbox from gRPC (called once provisioning is done).
+  const loadSandbox = async () => {
+    try {
+      const [sb, draft] = await Promise.all([
+        getSandbox(name),
+        getDraftPolicy(name).catch(() => ({
+          chunks: [],
+          draft_version: 0,
+          last_analyzed_at_ms: 0,
+        })),
+      ]);
+      setSandbox(sb);
+      setDraftChunks(draft.chunks);
+      setPendingCount(
+        draft.chunks.filter((c: DraftChunk) => c.status === "pending").length
+      );
+      setPageState("ready");
+      setError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      setPageState("ready");
+    }
+  };
 
   useEffect(() => {
     let stopped = false;
 
-    const poll = async () => {
-      if (stopped) return;
-
-      // Try to fetch the sandbox from gRPC
-      try {
-        const [sb, draft] = await Promise.all([
-          getSandbox(name),
-          getDraftPolicy(name).catch(() => ({
-            chunks: [],
-            draft_version: 0,
-            last_analyzed_at_ms: 0,
-          })),
-        ]);
+    // First try to load the sandbox directly — it may already exist
+    getSandbox(name)
+      .then(async (sb) => {
         if (stopped) return;
+        const draft = await getDraftPolicy(name).catch(() => ({
+          chunks: [],
+          draft_version: 0,
+          last_analyzed_at_ms: 0,
+        }));
         setSandbox(sb);
         setDraftChunks(draft.chunks);
         setPendingCount(
           draft.chunks.filter((c: DraftChunk) => c.status === "pending").length
         );
         setPageState("ready");
-        setError(null);
-        // Stop polling — sandbox is ready
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
-        return;
-      } catch (err) {
+      })
+      .catch((err) => {
+        if (stopped) return;
         const msg = err instanceof Error ? err.message : String(err);
         const is404 =
           msg.includes("not found") ||
@@ -124,49 +145,90 @@ export default function SandboxDetailPage() {
           msg.includes("404");
 
         if (!is404) {
-          // Genuine error, not just "not provisioned yet"
-          if (!stopped) {
-            setError(msg);
-            setPageState("ready");
-          }
+          setError(msg);
+          setPageState("ready");
           return;
         }
-      }
 
-      // Sandbox not found — check onboard status
-      try {
-        const os = await getOnboardStatus(name);
-        if (stopped) return;
-        setOnboardStatus(os);
+        // Sandbox not yet provisioned — subscribe to job SSE stream
+        const url = jobEventsUrl(name);
+        const es = new EventSource(url, { withCredentials: true });
+        esRef.current = es;
 
-        if (!os.active && os.exitCode != null && os.exitCode !== 0) {
-          // Failed
-          setPageState("error");
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
+        es.onmessage = (evt) => {
+          if (stopped) { es.close(); return; }
+          let msg: SseMessage;
+          try { msg = JSON.parse(evt.data); } catch { return; }
+
+          if (msg.type === "job_state") {
+            const job = msg.job;
+            const active = job.status === "queued" || job.status === "running";
+            setOnboardStatus({
+              active,
+              exitCode: job.exit_code,
+              startedAt: job.started_at,
+              elapsedMs: job.started_at ? Date.now() - job.started_at : null,
+              tail: [],
+            });
+            if (job.status === "done") {
+              es.close();
+              // Short delay then load the sandbox
+              pollRef.current = setTimeout(() => { if (!stopped) loadSandbox(); }, 1000);
+            } else if (job.status === "failed") {
+              setPageState("error");
+              es.close();
+            }
+          } else if (msg.type === "step_event") {
+            const line = `[${msg.ts}] ${msg.step} ${msg.status}${msg.error ? `: ${msg.error}` : ""}`;
+            setStepLog((prev) => [...prev, line]);
+            // Keep onboardStatus.active in sync
+            if (msg.status === "failed") {
+              setOnboardStatus((prev) =>
+                prev ? { ...prev, active: false, exitCode: 1 } : prev
+              );
+            }
+          } else if (msg.type === "job_done") {
+            if (msg.status === "done") {
+              es.close();
+              pollRef.current = setTimeout(() => { if (!stopped) loadSandbox(); }, 1000);
+            } else {
+              setPageState("error");
+              es.close();
+            }
+          } else if (msg.type === "no_job") {
+            // No job exists yet — poll every 2s until one appears
+            es.close();
+            const retry = () => {
+              if (stopped) return;
+              const es2 = new EventSource(jobEventsUrl(name), { withCredentials: true });
+              esRef.current = es2;
+              es2.onmessage = es.onmessage;
+              es2.onerror = () => {
+                es2.close();
+                pollRef.current = setTimeout(retry, 2000);
+              };
+            };
+            pollRef.current = setTimeout(retry, 2000);
           }
-        } else {
-          setPageState("provisioning");
-        }
-      } catch {
-        // onboard-status failed too — keep showing provisioning
-        if (!stopped) setPageState("provisioning");
-      }
-    };
+        };
 
-    // Initial poll
-    poll();
-
-    // Set up 3s polling interval
-    intervalRef.current = setInterval(poll, 3000);
+        es.onerror = () => {
+          if (stopped) return;
+          // Connection dropped — retry after 3s
+          es.close();
+          pollRef.current = setTimeout(() => {
+            if (stopped) return;
+            const es2 = new EventSource(jobEventsUrl(name), { withCredentials: true });
+            esRef.current = es2;
+            es2.onmessage = es.onmessage;
+          }, 3000);
+        };
+      });
 
     return () => {
       stopped = true;
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      if (esRef.current) { esRef.current.close(); esRef.current = null; }
+      if (pollRef.current) { clearTimeout(pollRef.current); pollRef.current = null; }
     };
   }, [name]);
 
@@ -191,7 +253,7 @@ export default function SandboxDetailPage() {
           </div>
           <h1 className="text-2xl font-bold">{name}</h1>
         </div>
-        <ProvisioningPanel name={name} status={onboardStatus} />
+        <ProvisioningPanel name={name} status={onboardStatus} stepLog={stepLog} />
       </div>
     );
   }
