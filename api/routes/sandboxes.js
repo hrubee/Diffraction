@@ -2,11 +2,14 @@ import { Router } from "express";
 import { execSync } from "child_process";
 import { readFile } from "fs/promises";
 import { grpcCall } from "../lib/grpc-client.js";
+import {
+  createJob,
+  updateJobStatus,
+  getJobBySandbox,
+  isJobRunning,
+} from "../lib/jobs.js";
 
 const router = Router();
-
-// In-memory lock: name -> { startedAt, logFile, pid }
-const activeOnboards = new Map();
 
 /**
  * Map UI provider name to the value onboard.js getNonInteractiveProvider() accepts.
@@ -61,47 +64,35 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /api/sandboxes/:name/onboard-status — tail the onboard log, report liveness
+// GET /api/sandboxes/:name/onboard-status — query job table, return liveness info.
+// Shape is backwards-compatible with the old in-memory implementation.
 router.get("/:name/onboard-status", async (req, res) => {
   const { name } = req.params;
-  const lock = activeOnboards.get(name);
-  const logFile = lock?.logFile ?? `/tmp/diffract-onboard-${name}.log`;
+  const job = getJobBySandbox(name);
 
-  let active = false;
-  let exitCode = null;
-  const startedAt = lock?.startedAt ?? null;
-  const elapsedMs = startedAt ? Date.now() - startedAt : null;
-
-  // Check if the child process is still alive
-  if (lock?.pid) {
+  if (!job) {
+    // No job record — fall back to log file for legacy runs
+    const logFile = `/tmp/diffract-onboard-${name}.log`;
+    let tail = [];
     try {
-      process.kill(lock.pid, 0); // no-op signal — throws if dead
-      active = true;
-    } catch {
-      active = false;
-    }
+      const raw = await readFile(logFile, "utf-8");
+      tail = raw.split("\n").slice(-100).filter(Boolean);
+    } catch { /* log absent */ }
+    return res.json({ active: false, exitCode: null, startedAt: null, elapsedMs: null, tail });
   }
 
-  // Read log tail (last 100 lines)
-  let tail = [];
-  try {
-    const raw = await readFile(logFile, "utf-8");
-    const lines = raw.split("\n");
-    tail = lines.slice(-100).filter(Boolean);
+  const active = job.status === "queued" || job.status === "running";
+  const exitCode = job.exit_code ?? null;
+  const startedAt = job.started_at ?? null;
+  const elapsedMs = startedAt ? Date.now() - startedAt : null;
 
-    // Infer exit status from log content if process is dead
-    if (!active && lock) {
-      const joined = tail.join("\n");
-      if (joined.includes("Onboard complete") || joined.includes("onboard complete")) {
-        exitCode = 0;
-      } else if (joined.includes("provisioning failed") || joined.includes("Error:") || joined.includes("process.exit")) {
-        exitCode = 1;
-      }
-      // Remove from lock once we know it's dead
-      activeOnboards.delete(name);
-    }
-  } catch {
-    // Log not yet created or already cleaned up
+  // Read log tail
+  let tail = [];
+  if (job.log_path) {
+    try {
+      const raw = await readFile(job.log_path, "utf-8");
+      tail = raw.split("\n").slice(-100).filter(Boolean);
+    } catch { /* log not yet written */ }
   }
 
   res.json({ active, exitCode, startedAt, elapsedMs, tail });
@@ -129,13 +120,13 @@ router.post("/", async (req, res) => {
     const { name, spec } = req.body;
     const sandboxName = (name || "my-assistant").trim();
 
-    // Concurrency lock — reject duplicate in-flight onboards
-    if (activeOnboards.has(sandboxName)) {
-      const existing = activeOnboards.get(sandboxName);
+    // Concurrency lock — reject duplicate in-flight onboards (worker pool concurrency=1)
+    if (isJobRunning(sandboxName)) {
+      const existing = getJobBySandbox(sandboxName);
       return res.status(409).json({
         error: `Sandbox '${sandboxName}' onboard already in progress`,
-        startedAt: existing.startedAt,
-        logFile: existing.logFile,
+        startedAt: existing?.started_at ?? null,
+        jobId: existing?.id ?? null,
       });
     }
 
@@ -182,13 +173,17 @@ router.post("/", async (req, res) => {
 
     const logFile = `/tmp/diffract-onboard-${sandboxName}.log`;
 
+    // Create a durable job record before spawning
+    const jobId = createJob(sandboxName, logFile);
+    updateJobStatus(jobId, "running");
+
     // Correct VPS repo path: /root/.diffract/repo (not /root/diffract)
     const cmd = [
       `export PATH="$PATH:$HOME/.local/bin"`,
       `export NVM_DIR="$HOME/.nvm"`,
       `. "$NVM_DIR/nvm.sh"`,
       `cd /root/.diffract/repo`,
-      `${envPrefix} node cli/bin/diffract.js onboard --non-interactive`,
+      `${envPrefix} DIFFRACTION_JOB_ID=${shellEscape(jobId)} node cli/bin/diffract.js onboard --non-interactive`,
     ].join(" && ");
 
     const { spawn: spawnProc } = await import("child_process");
@@ -198,11 +193,10 @@ router.post("/", async (req, res) => {
     });
     child.unref();
 
-    // Register in-memory lock with child PID
-    activeOnboards.set(sandboxName, {
-      startedAt: Date.now(),
-      logFile,
-      pid: child.pid,
+    // Update job when the child exits (best-effort — process may outlive the API)
+    child.once("exit", (code) => {
+      const finalStatus = code === 0 ? "done" : "failed";
+      try { updateJobStatus(jobId, finalStatus, code); } catch { /* db may be unavailable */ }
     });
 
     res.status(202).json({
@@ -210,6 +204,7 @@ router.post("/", async (req, res) => {
       status: "provisioning",
       message: "Sandbox creation started. This takes 3-5 minutes.",
       logFile,
+      jobId,
       pid: child.pid,
     });
   } catch (err) {

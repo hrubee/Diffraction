@@ -8,6 +8,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { ROOT, PROJECT_ROOT, SCRIPTS, run, runCapture } = require("./runner");
 const { OnboardMachine, makeSessionAdapter } = require("./onboard-machine");
 const {
@@ -37,6 +38,65 @@ const policies = require("./policies");
 const { checkPortAvailable, checkDiskSpace, checkMemory } = require("./preflight");
 const session = require("./onboard-session");
 const EXPERIMENTAL = process.env.DIFFRACTION_EXPERIMENTAL === "1";
+
+// ── Job event writer ─────────────────────────────────────────────────────────
+// When DIFFRACTION_JOB_ID is set (spawned by the API), write structured step
+// events to ~/.diffract/jobs.db so the SSE endpoint can stream them to the UI.
+
+let _jobDb = null;
+let _jobId = process.env.DIFFRACTION_JOB_ID || null;
+
+/**
+ * Open (or return cached) jobs.db handle.  Returns null if node:sqlite is
+ * unavailable or the DB cannot be opened (fail-safe — events are best-effort).
+ */
+function getJobDb() {
+  if (_jobDb !== null) return _jobDb;
+  if (!_jobId) return null;
+  try {
+    // node:sqlite is experimental but available in Node >= 22.5
+    const { DatabaseSync } = require("node:sqlite"); // eslint-disable-line
+    const dbPath = path.join(os.homedir(), ".diffract", "jobs.db");
+    _jobDb = new DatabaseSync(dbPath);
+    _jobDb.exec("PRAGMA journal_mode=WAL");
+    return _jobDb;
+  } catch {
+    _jobDb = false; // mark as unavailable so we don't retry
+    return null;
+  }
+}
+
+/**
+ * Write a step lifecycle event to the job_events table.
+ * @param {{ step: string, status: string, ts: string, error?: string }} event
+ */
+function writeJobEvent(event) {
+  if (!_jobId) return;
+  const d = getJobDb();
+  if (!d) return;
+  try {
+    d.prepare(
+      "INSERT INTO job_events (job_id, step, status, ts, error) VALUES (?, ?, ?, ?, ?)"
+    ).run(_jobId, event.step, event.status, event.ts, event.error ?? null);
+  } catch { /* non-fatal */ }
+}
+
+/**
+ * Update the job row status in jobs table.
+ * @param {'running'|'done'|'failed'} status
+ * @param {number|null} [exitCode]
+ */
+function updateJobStatus(status, exitCode = null) {
+  if (!_jobId) return;
+  const d = getJobDb();
+  if (!d) return;
+  try {
+    const finished = (status === "done" || status === "failed") ? Date.now() : null;
+    d.prepare(
+      "UPDATE jobs SET status=?, exit_code=?, finished_at=? WHERE id=?"
+    ).run(status, exitCode, finished, _jobId);
+  } catch { /* non-fatal */ }
+}
 
 // Non-interactive mode: set by --non-interactive flag or env var.
 // When active, all prompts use env var overrides or sensible defaults.
@@ -1340,13 +1400,18 @@ async function onboard(opts = {}) {
 
   // Build and run the state machine.
   // Each completed step emits a structured event; callers can pass opts.onEvent.
+  // When DIFFRACTION_JOB_ID is set, also persist events to jobs.db.
+  updateJobStatus("running");
   const sessionAdapter = makeSessionAdapter(session);
   const context = {};
   const machine = new OnboardMachine({
     steps: buildStepDefs(),
     session: sessionAdapter,
     context,
-    onEvent: opts.onEvent ?? null,
+    onEvent: (event) => {
+      writeJobEvent(event);
+      if (typeof opts.onEvent === "function") opts.onEvent(event);
+    },
   });
 
   await machine.run();
@@ -1414,6 +1479,7 @@ async function onboard(opts = {}) {
     }
   } catch { /* non-fatal — dashboard can be started manually */ }
 
+  updateJobStatus("done", 0);
   session.completeSession({ sandboxName, model, provider });
   printDashboard(sandboxName, model, provider);
 }
