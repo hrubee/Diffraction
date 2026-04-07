@@ -21,7 +21,7 @@ describe("onboard helpers", () => {
     assert.match(script, /cat > ~\/\.diffract\/config\.json/);
     assert.match(script, /"model": "nemotron-3-nano:30b"/);
     assert.match(script, /"credentialEnv": "OPENAI_API_KEY"/);
-    assert.match(script, /diffract models set 'inference\/nemotron-3-nano:30b'/);
+    assert.match(script, /openshell models set 'inference\/nemotron-3-nano:30b'/);
     assert.match(script, /cfg\.setdefault\('agents', \{\}\)\.setdefault\('defaults', \{\}\)\.setdefault\('model', \{\}\)\['primary'\]/);
     assert.match(script, /providers_cfg\["inference"\]/);
     assert.match(script, /json\.loads\("\{\\\"baseUrl\\\":\\\"https:\/\/inference\.local\/v1\\\",\\\"apiKey\\\":\\\"unused\\\"/);
