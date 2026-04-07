@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 //
-// Interactive onboarding wizard — 7 steps from zero to running sandbox.
+// Interactive onboarding wizard — 8 steps from zero to running sandbox.
+// Orchestration is driven by OnboardMachine (see onboard-machine.js).
 // Supports non-interactive mode via --non-interactive flag or
 // DIFFRACTION_NON_INTERACTIVE=1 env var for CI/CD pipelines.
 
 const fs = require("fs");
 const path = require("path");
 const { ROOT, PROJECT_ROOT, SCRIPTS, run, runCapture } = require("./runner");
+const { OnboardMachine, makeSessionAdapter } = require("./onboard-machine");
 const {
   getDefaultOllamaModel,
   getLocalProviderBaseUrl,
@@ -1214,6 +1216,91 @@ function printDashboard(sandboxName, model, provider) {
 
 // ── Main ─────────────────────────────────────────────────────────
 
+/**
+ * Build the ordered list of step definitions for the OnboardMachine.
+ *
+ * Step order follows the NemoClaw pattern:
+ *   1. preflight  → 2. gateway  → 3. provider_selection → 4. inference
+ *   → 5. sandbox  → 6. browser  → 7. openclaw           → 8. policies
+ *
+ * Provider/inference runs BEFORE sandbox creation so the sandbox starts
+ * with the correct inference route already configured.
+ */
+function buildStepDefs() {
+  return [
+    {
+      id: "preflight",
+      timeout: 5 * 60 * 1000,
+      async execute(ctx) {
+        const gpu = await preflight();
+        return { gpu };
+      },
+      restoreCtx(ctx) {
+        ctx.gpu = nim.detectGpu();
+      },
+    },
+    {
+      id: "gateway",
+      timeout: 5 * 60 * 1000,
+      async execute(ctx) {
+        await startGateway(ctx.gpu);
+      },
+    },
+    {
+      id: "provider_selection",
+      timeout: 10 * 60 * 1000,
+      async execute(ctx) {
+        const { model, provider } = await setupNim(null, ctx.gpu);
+        return { model, provider };
+      },
+      restoreCtx(ctx, sessionData) {
+        ctx.model = sessionData.model;
+        ctx.provider = sessionData.provider;
+      },
+    },
+    {
+      id: "inference",
+      timeout: 5 * 60 * 1000,
+      async execute(ctx) {
+        await setupInference(null, ctx.model, ctx.provider);
+      },
+    },
+    {
+      id: "sandbox",
+      timeout: 15 * 60 * 1000,
+      async execute(ctx) {
+        const sandboxName = await createSandbox(ctx.gpu);
+        return { sandboxName };
+      },
+      restoreCtx(ctx, sessionData) {
+        ctx.sandboxName = sessionData.sandboxName || "my-assistant";
+      },
+    },
+    {
+      id: "browser",
+      timeout: 3 * 60 * 1000,
+      nonFatal: true,
+      async execute(ctx) {
+        await installBrowser(ctx.sandboxName);
+      },
+    },
+    {
+      id: "openclaw",
+      timeout: 5 * 60 * 1000,
+      async execute(ctx) {
+        await setupOpenclaw(ctx.sandboxName, ctx.model, ctx.provider);
+      },
+    },
+    {
+      id: "policies",
+      timeout: 5 * 60 * 1000,
+      async execute(ctx) {
+        await setupPolicies(ctx.sandboxName);
+      },
+    },
+  ];
+}
+
 async function onboard(opts = {}) {
   NON_INTERACTIVE = opts.nonInteractive || process.env.DIFFRACTION_NON_INTERACTIVE === "1";
 
@@ -1251,103 +1338,20 @@ async function onboard(opts = {}) {
   if (isNonInteractive()) console.log("  (non-interactive mode)");
   console.log("  " + "═".repeat(47));
 
-  // Step tracking helper
-  const shouldSkip = (stepName) => {
-    const step = sess.steps[stepName];
-    return step && step.status === "complete";
-  };
+  // Build and run the state machine.
+  // Each completed step emits a structured event; callers can pass opts.onEvent.
+  const sessionAdapter = makeSessionAdapter(session);
+  const context = {};
+  const machine = new OnboardMachine({
+    steps: buildStepDefs(),
+    session: sessionAdapter,
+    context,
+    onEvent: opts.onEvent ?? null,
+  });
 
-  // Step order follows NemoClaw pattern:
-  // 1. Preflight → 2. Gateway → 3. Provider selection → 4. Inference setup
-  // → 5. Sandbox create → 6. Browser install → 7. OpenClaw + gateway start → 8. Policies
-  // Provider/inference BEFORE sandbox so the sandbox gets the correct route at creation.
+  await machine.run();
 
-  let gpu;
-  if (!shouldSkip("preflight")) {
-    session.markStepStarted("preflight");
-    try { gpu = await preflight(); session.markStepComplete("preflight"); }
-    catch (e) { session.markStepFailed("preflight", e.message); throw e; }
-  } else {
-    console.log("  ✓ Preflight (skipped — already complete)");
-    gpu = nim.detectGpu();
-  }
-
-  if (!shouldSkip("gateway")) {
-    session.markStepStarted("gateway");
-    try { await startGateway(gpu); session.markStepComplete("gateway"); }
-    catch (e) { session.markStepFailed("gateway", e.message); throw e; }
-  } else {
-    console.log("  ✓ Gateway (skipped — already complete)");
-  }
-
-  // Steps 3+4: Provider selection and inference setup BEFORE sandbox creation
-  let model, provider;
-  if (!shouldSkip("provider_selection")) {
-    session.markStepStarted("provider_selection");
-    try {
-      ({ model, provider } = await setupNim(null, gpu));
-      session.markStepComplete("provider_selection", { model, provider });
-    } catch (e) { session.markStepFailed("provider_selection", e.message); throw e; }
-  } else {
-    model = sess.model; provider = sess.provider;
-    console.log(`  ✓ Provider selection (skipped — already complete)`);
-  }
-
-  if (!shouldSkip("inference")) {
-    session.markStepStarted("inference");
-    try {
-      await setupInference(null, model, provider);
-      session.markStepComplete("inference");
-    } catch (e) { session.markStepFailed("inference", e.message); throw e; }
-  } else {
-    console.log("  ✓ Inference (skipped — already complete)");
-  }
-
-  // Step 5: Sandbox creation (now has correct inference route)
-  let sandboxName;
-  if (!shouldSkip("sandbox")) {
-    session.markStepStarted("sandbox");
-    try {
-      sandboxName = await createSandbox(gpu);
-      session.markStepComplete("sandbox", { sandboxName });
-    } catch (e) { session.markStepFailed("sandbox", e.message); throw e; }
-  } else {
-    sandboxName = sess.sandboxName || "my-assistant";
-    console.log(`  ✓ Sandbox '${sandboxName}' (skipped — already complete)`);
-  }
-
-  // Step 6: Browser install (non-fatal)
-  if (!shouldSkip("browser")) {
-    session.markStepStarted("browser");
-    try {
-      await installBrowser(sandboxName);
-      session.markStepComplete("browser");
-    } catch (e) { session.markStepFailed("browser", e.message); /* non-fatal */ }
-  } else {
-    console.log("  ✓ Browser (skipped — already complete)");
-  }
-
-  // Step 7: OpenClaw config + gateway start
-  if (!shouldSkip("openclaw")) {
-    session.markStepStarted("openclaw");
-    try {
-      await setupOpenclaw(sandboxName, model, provider);
-      session.markStepComplete("openclaw");
-    } catch (e) { session.markStepFailed("openclaw", e.message); throw e; }
-  } else {
-    console.log("  ✓ OpenClaw config (skipped — already complete)");
-  }
-
-  // Step 8: Policy presets
-  if (!shouldSkip("policies")) {
-    session.markStepStarted("policies");
-    try {
-      await setupPolicies(sandboxName);
-      session.markStepComplete("policies");
-    } catch (e) { session.markStepFailed("policies", e.message); throw e; }
-  } else {
-    console.log("  ✓ Policies (skipped — already complete)");
-  }
+  const { sandboxName, model, provider } = context;
 
   // Save baseline policy rules to registry so the dashboard knows which rules are system-level.
   // This runs after policies are applied, capturing all onboard-created rules.
@@ -1414,4 +1418,4 @@ async function onboard(opts = {}) {
   printDashboard(sandboxName, model, provider);
 }
 
-module.exports = { buildSandboxConfigSyncScript, hasStaleGateway, isSandboxReady, onboard, setupNim };
+module.exports = { buildSandboxConfigSyncScript, buildStepDefs, hasStaleGateway, isSandboxReady, onboard, setupNim };
