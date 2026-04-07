@@ -8,13 +8,19 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "start":     "node cli/bin/diffract.js",
-    "init":      "node cli/bin/diffract.js init",
-    "status":    "node cli/bin/diffract.js status",
-    "stop":      "node cli/bin/diffract.js stop",
-    "list":      "node cli/bin/diffract.js list",
+    "start": "node cli/bin/diffract.js",
+    "init": "node cli/bin/diffract.js init",
+    "status": "node cli/bin/diffract.js status",
+    "stop": "node cli/bin/diffract.js stop",
+    "list": "node cli/bin/diffract.js list",
     "uninstall": "node cli/bin/diffract.js uninstall",
-    "postinstall": "cd cli && npm install --omit=dev --ignore-scripts"
+    "postinstall": "cd cli && npm install --omit=dev --ignore-scripts",
+    "e2e": "playwright test --config=e2e/playwright.config.ts",
+    "e2e:docker": "docker build -f e2e/Dockerfile -t diffract-e2e . && docker run --rm diffract-e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@types/node": "^25.5.2"
   },
   "repository": {
     "type": "git",

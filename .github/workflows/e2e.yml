@@ -1,0 +1,80 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ui/**"
+      - "e2e/**"
+      - ".github/workflows/e2e.yml"
+      - "package.json"
+  pull_request:
+    branches: [main]
+    paths:
+      - "ui/**"
+      - "e2e/**"
+      - ".github/workflows/e2e.yml"
+      - "package.json"
+
+jobs:
+  e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Install root devDependencies (@playwright/test)
+      - name: Install root dependencies
+        run: npm install --ignore-scripts
+
+      # Install Playwright browsers (Chromium only, no system deps bundle needed
+      # because ubuntu-latest ships the required system libs)
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      # Install and build the UI
+      - name: Install UI dependencies
+        run: cd ui && npm ci
+
+      - name: Build UI
+        run: cd ui && npm run build
+
+      # Run the e2e suite.  The webServer block in playwright.config.ts is
+      # bypassed because E2E_BASE_URL is set; we start next start ourselves so
+      # we control the lifecycle explicitly.
+      - name: Start UI server
+        run: |
+          cd ui && nohup npx next start --port 3000 > /tmp/ui.log 2>&1 &
+          echo "Waiting for UI server..."
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:3000 > /dev/null 2>&1 && break || sleep 2
+          done
+          echo "UI server ready."
+
+      - name: Run Playwright tests
+        run: E2E_BASE_URL=http://localhost:3000 npx playwright test --config=e2e/playwright.config.ts
+        env:
+          CI: true
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 14
+
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: e2e/test-results/
+          retention-days: 7
