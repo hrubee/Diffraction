@@ -68,8 +68,8 @@ revive_forward() {
 
 # Parse 'openshell forward list' and revive any dead forwards.
 # Output format (columns, whitespace-separated, ANSI stripped):
-#   SANDBOX   LOCAL_PORT  ->  REMOTE_PORT  STATUS
-#   smoke1    18789       ->  18789        dead
+#   SANDBOX   BIND         PORT   PID    STATUS
+#   smoke1    127.0.0.1    18789  12345  dead
 check_and_revive() {
   local raw
   raw="$(openshell forward list 2>/dev/null)" || {
@@ -89,8 +89,8 @@ check_and_revive() {
     [[ -z "${line// }" ]] && continue
     [[ "$line" =~ ^SANDBOX ]] && continue
 
-    # Split on whitespace: name local_port -> remote_port status
-    read -r name local_port _arrow _remote_port status <<< "$line"
+    # Split on whitespace: name bind port pid status
+    read -r name _bind local_port _pid status <<< "$line"
 
     [[ -z "$name" || -z "$local_port" || -z "$status" ]] && continue
 
