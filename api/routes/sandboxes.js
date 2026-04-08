@@ -264,6 +264,16 @@ router.post("/:name/restart-gateway", async (req, res) => {
       { encoding: "utf-8", timeout: 10000 }
     );
 
+    // Step 4b — Restart host-side port-forward (dead forward → blank iframe)
+    try {
+      execSync(`openshell forward stop 18789 ${JSON.stringify(name)}`, {
+        encoding: "utf-8", timeout: 8000,
+      });
+    } catch { /* forward may already be stopped — continue */ }
+    execSync(`openshell forward start 18789 ${JSON.stringify(name)} --background`, {
+      encoding: "utf-8", timeout: 10000,
+    });
+
     // Step 5 — Poll health for up to 30 seconds (15 × 2s)
     let healthy = false;
     for (let i = 0; i < 15; i++) {
