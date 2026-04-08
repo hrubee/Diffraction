@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 
-export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
+export default function ChatPanel({ sandboxName, restartNonce = 0 }: { sandboxName: string; restartNonce?: number }) {
   const [iframeKey, setIframeKey] = useState(0);
   // resolvedFor tracks which sandboxName the current token was fetched for.
   // tokenLoading is derived: true whenever resolvedFor !== sandboxName.
@@ -16,6 +16,11 @@ export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
   const chatUrl = token ? `${baseChatUrl}?token=${encodeURIComponent(token)}` : baseChatUrl;
 
   useEffect(() => {
+    // On gateway restart, reload the iframe before the new token arrives
+    if (restartNonce > 0) {
+      setIframeKey((k) => k + 1);
+    }
+    setResolvedFor(null);
     let cancelled = false;
     fetch("/api/gateway-token", { credentials: "include" })
       .then((r) => r.json())
@@ -33,7 +38,7 @@ export default function ChatPanel({ sandboxName }: { sandboxName: string }) {
         setResolvedFor(sandboxName);
       });
     return () => { cancelled = true; };
-  }, [sandboxName]);
+  }, [sandboxName, restartNonce]);
 
   function copyToken() {
     if (!token) return;
