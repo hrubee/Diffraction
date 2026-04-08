@@ -85,6 +85,7 @@ export default function SandboxDetailPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
+  const [restartNonce, setRestartNonce] = useState(0);
   const [pageState, setPageState] = useState<PageState>("provisioning");
   const [onboardStatus, setOnboardStatus] = useState<OnboardStatus | null>(null);
   // Accumulated log lines from SSE step events for the provisioning panel
@@ -280,6 +281,7 @@ export default function SandboxDetailPage() {
                 const data = await r.json();
                 if (data.healthy) {
                   setError(null);
+                  setRestartNonce((n) => n + 1);
                 } else {
                   setError("Gateway restarted but not healthy yet — check logs");
                 }
@@ -397,7 +399,7 @@ export default function SandboxDetailPage() {
 
         {tab === "logs" && <LogViewer sandboxName={name} />}
 
-        {tab === "chat" && <ChatPanel sandboxName={name} />}
+        {tab === "chat" && <ChatPanel sandboxName={name} restartNonce={restartNonce} />}
 
         {tab === "policy" && (
           <div className="space-y-8 overflow-y-auto h-full">
