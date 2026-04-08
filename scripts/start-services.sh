@@ -94,7 +94,7 @@ stop_service() {
 show_status() {
   mkdir -p "$PIDDIR"
   echo ""
-  for svc in gateway-watchdog telegram-bridge cloudflared; do
+  for svc in gateway-watchdog forward-watchdog telegram-bridge cloudflared; do
     if is_running "$svc"; then
       echo -e "  ${GREEN}●${NC} $svc  (PID $(cat "$PIDDIR/$svc.pid"))"
     else
@@ -115,6 +115,7 @@ show_status() {
 do_stop() {
   mkdir -p "$PIDDIR"
   stop_service gateway-watchdog
+  stop_service forward-watchdog
   stop_service cloudflared
   stop_service telegram-bridge
   info "All services stopped."
@@ -142,6 +143,10 @@ do_start() {
   # Gateway watchdog — monitors and auto-restarts the gateway
   SANDBOX_NAME="$SANDBOX_NAME" start_service gateway-watchdog \
     bash "$REPO_DIR/scripts/gateway-watchdog.sh" "$SANDBOX_NAME" 30
+
+  # Forward watchdog — revives dead openshell port-forwards
+  start_service forward-watchdog \
+    bash "$REPO_DIR/scripts/forward-watchdog.sh" "$SANDBOX_NAME" 30
 
   # Telegram bridge (only if token provided)
   if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
