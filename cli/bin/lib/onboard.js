@@ -786,8 +786,8 @@ async function createSandbox(gpu) {
 async function installBrowser(sandboxName) {
   step(6, 8, "Configuring browser in sandbox");
 
-  if (process.env.DIFFRACTION_ENABLE_BROWSER !== "1") {
-    console.log("  ✓ Browser step skipped (set DIFFRACTION_ENABLE_BROWSER=1 to enable)");
+  if (process.env.DIFFRACTION_SKIP_BROWSER === "1") {
+    console.log("  ✓ Browser step skipped (set DIFFRACTION_SKIP_BROWSER=1 to skip)");
     return;
   }
 
