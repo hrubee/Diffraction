@@ -81,9 +81,18 @@ stop_children() {
     kill "$SOCAT_PID" 2>/dev/null || true
     SOCAT_PID=""
   fi
-  # Kill any stragglers by command match
+  # Kill any stragglers by command match on the host (docker exec wrappers)
   pkill -f "kubectl port-forward.*${SANDBOX}.*${GATEWAY_PORT}" 2>/dev/null || true
   pkill -f "socat.*TCP-LISTEN:${GATEWAY_PORT}" 2>/dev/null || true
+  # Also kill kubectl processes INSIDE the cluster container.
+  # Killing the host-side 'docker exec' wrapper does NOT send signals into the
+  # container process, so kubectl port-forward keeps running and holds the port.
+  local cluster_container
+  cluster_container="$(docker ps --format '{{.Names}}' | grep -E '^openshell-cluster-' | head -1 || true)"
+  if [ -n "$cluster_container" ]; then
+    docker exec "$cluster_container" \
+      pkill -f "kubectl port-forward.*${SANDBOX}.*${GATEWAY_PORT}" 2>/dev/null || true
+  fi
   sleep 1
 }
 
