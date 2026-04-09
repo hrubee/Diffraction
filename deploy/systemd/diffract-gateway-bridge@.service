@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 Diffraction contributors.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Template systemd unit for the Diffract gateway bridge.
+#
+# Enable per-sandbox:
+#   systemctl enable --now diffract-gateway-bridge@smoke1
+#
+# The %i specifier expands to the instance name (sandbox name).
+# ExecStartPre installs the script to /usr/local/bin if not already present.
+
+[Unit]
+Description=Diffract gateway bridge for sandbox %i (kpf+socat)
+Documentation=https://diffract.dev/ops/gateway-bridge
+After=docker.service network-online.target
+Requires=docker.service
+# Restart if the API server or another bridge unit starts before us
+PartOf=diffract-api.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+
+# Ensure diffract tooling is on PATH
+Environment="PATH=/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Install bridge script if missing (idempotent)
+ExecStartPre=/bin/bash -c 'if [ ! -x /usr/local/bin/diffract-gateway-bridge ]; then \
+  cp /opt/diffract/scripts/diffract-gateway-bridge.sh /usr/local/bin/diffract-gateway-bridge && \
+  chmod +x /usr/local/bin/diffract-gateway-bridge; \
+fi'
+
+ExecStart=/usr/local/bin/diffract-gateway-bridge %i
+
+# Graceful stop — send SIGTERM, wait 10s, then SIGKILL
+TimeoutStopSec=10
+KillMode=mixed
+
+# Logging goes to journald (bridge also writes to /var/log/diffract-gateway-bridge-*.log)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=diffract-gateway-bridge-%i
+
+[Install]
+WantedBy=multi-user.target

@@ -44,7 +44,22 @@ info() { echo -e "${GREEN}[forward-watchdog]${NC} $1"; }
 warn() { echo -e "${YELLOW}[forward-watchdog]${NC} $1"; }
 err()  { echo -e "${RED}[forward-watchdog]${NC} $1"; }
 
+# Probe HTTP reachability of a local port.
+# Returns 0 if the port responds with any HTTP reply, 1 on empty reply/timeout.
+# Args: <local-port>
+probe_http() {
+  local port="$1"
+  local http_code
+  http_code="$(curl -o /dev/null -s -w '%{http_code}' \
+    --max-time 3 "http://127.0.0.1:${port}/" 2>/dev/null)" || true
+  # 000 = connection refused or timeout — port is dead
+  [ "$http_code" != "000" ]
+}
+
 # Revive a single dead port-forward entry.
+# Prefers restarting the systemd bridge unit (diffract-gateway-bridge@<name>)
+# over openshell forward, because the bridge unit is the authoritative supervisor.
+# Falls back to openshell forward if no systemd unit is present (dev environments).
 # Args: <sandbox-name> <local-port>
 revive_forward() {
   local name="$1"
@@ -52,13 +67,24 @@ revive_forward() {
 
   warn "Reviving dead forward: $name port $port"
 
-  # Stop the stale entry (may already be gone, ignore errors)
+  # Prefer systemd bridge unit restart (production path)
+  local unit="diffract-gateway-bridge@${name}.service"
+  if systemctl is-enabled "$unit" >/dev/null 2>&1; then
+    info "Restarting systemd unit $unit"
+    if systemctl restart "$unit" 2>/dev/null; then
+      info "systemctl restart $unit succeeded"
+      return 0
+    else
+      err "systemctl restart $unit failed — falling through to openshell forward"
+    fi
+  fi
+
+  # Fallback: legacy openshell forward (dev / non-systemd environments)
   openshell forward stop "$port" "$name" 2>/dev/null || true
   sleep 1
 
-  # Restart in background
   if openshell forward start --background "$port" "$name" 2>/dev/null; then
-    info "Forward $name:$port restarted successfully"
+    info "Forward $name:$port restarted via openshell forward"
     return 0
   else
     err "Failed to restart forward $name:$port"
@@ -67,9 +93,11 @@ revive_forward() {
 }
 
 # Parse 'openshell forward list' and revive any dead forwards.
+# Also runs an HTTP probe on each live forward — catches the silent-death case
+# where the PID is alive but the TCP connection returns empty replies.
 # Output format (columns, whitespace-separated, ANSI stripped):
 #   SANDBOX   BIND         PORT   PID    STATUS
-#   smoke1    127.0.0.1    18789  12345  dead
+#   smoke1    127.0.0.1    18789  12345  alive
 check_and_revive() {
   local raw
   raw="$(openshell forward list 2>/dev/null)" || {
@@ -102,9 +130,17 @@ check_and_revive() {
     checked=$((checked + 1))
 
     if [[ "$status" == "dead" ]]; then
-      warn "Dead forward detected: $name port $local_port"
+      warn "Dead forward detected (PID check): $name port $local_port"
       if revive_forward "$name" "$local_port"; then
         revived=$((revived + 1))
+      fi
+    else
+      # PID is alive — run HTTP probe to catch silent dead connections
+      if ! probe_http "$local_port"; then
+        warn "HTTP probe failed (empty reply): $name port $local_port — restarting"
+        if revive_forward "$name" "$local_port"; then
+          revived=$((revived + 1))
+        fi
       fi
     fi
   done <<< "$clean"
