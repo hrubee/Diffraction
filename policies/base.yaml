@@ -25,6 +25,9 @@ filesystem_policy:
     - /app
     - /etc
     - /var/log
+    # Playwright-installed Chromium lives here; needs read+exec so browser can spawn.
+    # Landlock compatibility is best_effort so this is a no-op if kernel lacks support.
+    - /opt/chromium-headless
   read_write:
     - /sandbox
     - /tmp

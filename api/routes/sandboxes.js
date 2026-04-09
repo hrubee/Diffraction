@@ -264,15 +264,25 @@ router.post("/:name/restart-gateway", async (req, res) => {
       { encoding: "utf-8", timeout: 10000 }
     );
 
-    // Step 4b — Restart host-side port-forward (dead forward → blank iframe)
+    // Step 4b — Restart host-side bridge via systemd (preferred) or openshell forward (fallback).
+    // The systemd unit diffract-gateway-bridge@<name> supervises kpf+socat — it is
+    // far more reliable than openshell forward and self-heals after crashes.
+    const unit = `diffract-gateway-bridge@${name}.service`;
     try {
-      execSync(`openshell forward stop 18789 ${JSON.stringify(name)}`, {
-        encoding: "utf-8", timeout: 8000,
+      execSync(`systemctl is-enabled ${unit}`, { encoding: "utf-8", timeout: 5000 });
+      // Unit is enabled — use systemctl restart
+      execSync(`systemctl restart ${unit}`, { encoding: "utf-8", timeout: 15000 });
+    } catch {
+      // Unit not present (dev environment) — fall back to openshell forward
+      try {
+        execSync(`openshell forward stop 18789 ${JSON.stringify(name)}`, {
+          encoding: "utf-8", timeout: 8000,
+        });
+      } catch { /* forward may already be stopped — continue */ }
+      execSync(`openshell forward start 18789 ${JSON.stringify(name)} --background`, {
+        encoding: "utf-8", timeout: 10000,
       });
-    } catch { /* forward may already be stopped — continue */ }
-    execSync(`openshell forward start 18789 ${JSON.stringify(name)} --background`, {
-      encoding: "utf-8", timeout: 10000,
-    });
+    }
 
     // Step 5 — Poll health for up to 30 seconds (15 × 2s)
     let healthy = false;
