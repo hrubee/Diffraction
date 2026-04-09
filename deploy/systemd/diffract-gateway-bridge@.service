@@ -33,8 +33,15 @@ fi'
 
 ExecStart=/usr/local/bin/diffract-gateway-bridge %i
 
-# Graceful stop — send SIGTERM, wait 10s, then SIGKILL
-TimeoutStopSec=10
+# On stop, also kill kubectl port-forward processes inside the cluster container.
+# Killing the host-side 'docker exec' wrapper does NOT send signals into the
+# container, so kubectl keeps the port bound across restarts.
+ExecStop=/bin/bash -c '\
+  CONT=$(docker ps --format "{{.Names}}" | grep -E "^openshell-cluster-" | head -1); \
+  [ -n "$CONT" ] && docker exec "$CONT" pkill -9 -f "kubectl port-forward.*%i" 2>/dev/null || true'
+
+# Graceful stop — send SIGTERM, wait 20s for cleanup, then SIGKILL
+TimeoutStopSec=20
 KillMode=mixed
 
 # Logging goes to journald (bridge also writes to /var/log/diffract-gateway-bridge-*.log)
