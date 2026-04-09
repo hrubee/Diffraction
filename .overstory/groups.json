@@ -59,9 +59,9 @@
 		"memberIssueIds": [
 			"Diffraction-c3e3"
 		],
-		"status": "active",
+		"status": "completed",
 		"createdAt": "2026-04-06T05:23:09.443Z",
-		"completedAt": null
+		"completedAt": "2026-04-09T05:00:13.815Z"
 	},
 	{
 		"id": "group-5a3f5983",
@@ -70,8 +70,8 @@
 			"Diffraction-1aa2",
 			"Diffraction-e4cb"
 		],
-		"status": "active",
+		"status": "completed",
 		"createdAt": "2026-04-06T05:53:46.190Z",
-		"completedAt": null
+		"completedAt": "2026-04-09T05:00:13.994Z"
 	}
 ]
