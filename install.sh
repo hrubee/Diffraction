@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Diffract installer — from zero to running AI agent with one command.
+# Diffract installer — from zero to running dashboard with one command.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/hrubee/Diffraction/main/install.sh | bash
@@ -12,9 +12,7 @@
 #   5. Clones/updates the Diffract repo
 #   6. Installs CLI + API + UI dependencies
 #   7. Builds the UI
-#   8. Creates the `diffract` command
-#
-# After install, run: diffract onboard
+#   8. Installs and starts systemd services (Linux only)
 
 set -euo pipefail
 
@@ -167,6 +165,9 @@ echo "  ✓ OpenShell $(openshell --version 2>/dev/null || echo 'installed')"
 
 echo "  [5/8] Setting up Diffract..."
 
+# Capture current HEAD before any update (for change detection)
+OLD_HEAD="$(cd "$INSTALL_DIR/repo" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo '')"
+
 if [ -d "$INSTALL_DIR/repo" ]; then
   echo "  Updating existing installation..."
   (cd "$INSTALL_DIR/repo" && git pull --rebase --quiet 2>/dev/null || true)
@@ -175,13 +176,19 @@ else
   git clone --depth 1 "$REPO_URL" "$INSTALL_DIR/repo"
 fi
 
+NEW_HEAD="$(cd "$INSTALL_DIR/repo" && git rev-parse HEAD)"
+CODE_CHANGED=0
+if [ -z "$OLD_HEAD" ] || [ "$OLD_HEAD" != "$NEW_HEAD" ]; then
+  CODE_CHANGED=1
+fi
+
 # ── 6. Install dependencies ──────────────────────────────────────
 
 echo "  [6/8] Installing dependencies..."
 
 (cd "$INSTALL_DIR/repo/cli" && npm install --ignore-scripts --silent 2>/dev/null)
 (cd "$INSTALL_DIR/repo/api" && npm install --silent 2>/dev/null)
-(cd "$INSTALL_DIR/repo/ui" && npm install --silent 2>/dev/null)
+(cd "$INSTALL_DIR/repo/ui"  && npm install --silent 2>/dev/null)
 
 # ── 7. Build UI ───────────────────────────────────────────────────
 
@@ -189,9 +196,7 @@ echo "  [7/8] Building dashboard UI..."
 
 (cd "$INSTALL_DIR/repo/ui" && npm run build 2>/dev/null)
 
-# ── 8. Create diffract command ────────────────────────────────────
-
-echo "  [8/8] Creating diffract command..."
+# ── Create diffract command ───────────────────────────────────────
 
 WRAPPER="$BIN_DIR/diffract"
 WRAPPER_CONTENT="#!/usr/bin/env bash
@@ -211,17 +216,147 @@ else
   $SUDO chmod +x "$WRAPPER"
 fi
 
+# ── 8. Install and start systemd services (Linux only) ────────────
+
+echo "  [8/8] Configuring services..."
+
+detect_domain() {
+  if [ -n "${DIFFRACT_DOMAIN:-}" ]; then echo "$DIFFRACT_DOMAIN"; return; fi
+  local fqdn
+  fqdn="$(hostname -f 2>/dev/null || true)"
+  if echo "$fqdn" | grep -qE '\.' && ! echo "$fqdn" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "$fqdn"; return
+  fi
+  local ip
+  ip="$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null)"
+  [ -n "$ip" ] && { echo "$ip"; return; }
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  [ -n "$ip" ] && { echo "$ip"; return; }
+  echo localhost
+}
+
+if [ "$(uname)" = "Darwin" ]; then
+  echo "  systemd services are Linux-only."
+  echo "  On macOS run: bash scripts/start-ui.sh to launch UI+API in the foreground."
+  DOMAIN="localhost"
+  URL="http://${DOMAIN}:3000/setup"
+elif ! command_exists systemctl; then
+  echo "  systemd not found — skipping service install"
+  DOMAIN="$(detect_domain)"
+  if echo "$DOMAIN" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || [ "$DOMAIN" = "localhost" ]; then
+    URL="http://${DOMAIN}:3000/setup"
+  else
+    URL="https://${DOMAIN}/setup"
+  fi
+else
+  # Resolve real user (may differ when run with sudo)
+  REAL_USER="${SUDO_USER:-$USER}"
+  [ -z "$REAL_USER" ] && REAL_USER=root
+  REAL_GROUP="$(id -gn "$REAL_USER" 2>/dev/null || echo "$REAL_USER")"
+  REAL_HOME="$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)"
+  [ -z "$REAL_HOME" ] && REAL_HOME="$HOME"
+  INSTALL_DIR_RESOLVED="$REAL_HOME/.diffract/repo"
+  NODE_BIN="$(command -v node)"
+  NODE_DIR="$(dirname "$NODE_BIN")"
+
+  UNIT_CHANGED=0
+  for svc in diffract-api diffract-ui; do
+    SRC="$INSTALL_DIR/repo/systemd/${svc}.service"
+    DST="/etc/systemd/system/${svc}.service"
+
+    if [ ! -f "$SRC" ]; then
+      echo "  WARNING: $SRC not found — skipping $svc"
+      continue
+    fi
+
+    RENDERED="$(mktemp)"
+    sed \
+      -e "s|@@USER@@|${REAL_USER}|g" \
+      -e "s|@@GROUP@@|${REAL_GROUP}|g" \
+      -e "s|@@USER_HOME@@|${REAL_HOME}|g" \
+      -e "s|@@INSTALL_DIR@@|${INSTALL_DIR_RESOLVED}|g" \
+      -e "s|@@NODE_BIN@@|${NODE_BIN}|g" \
+      -e "s|@@NODE_DIR@@|${NODE_DIR}|g" \
+      "$SRC" > "$RENDERED"
+
+    if [ ! -f "$DST" ] || ! cmp -s "$RENDERED" "$DST"; then
+      $SUDO cp "$RENDERED" "$DST"
+      $SUDO chmod 644 "$DST"
+      UNIT_CHANGED=1
+      echo "  ✓ Installed ${svc}.service"
+    else
+      echo "  ✓ ${svc}.service unchanged"
+    fi
+    rm -f "$RENDERED"
+  done
+
+  if [ "$UNIT_CHANGED" -eq 1 ]; then
+    $SUDO systemctl daemon-reload
+  fi
+
+  # Enable (idempotent)
+  $SUDO systemctl enable diffract-api.service diffract-ui.service 2>/dev/null
+
+  # Restart only when something changed or services are down
+  for svc in diffract-api diffract-ui; do
+    if [ "$UNIT_CHANGED" -eq 1 ] || [ "$CODE_CHANGED" -eq 1 ] || \
+       ! $SUDO systemctl is-active --quiet "${svc}.service" 2>/dev/null; then
+      $SUDO systemctl restart "${svc}.service"
+    fi
+  done
+  echo "  ✓ Services running"
+
+  # ── Wait for health (up to 60s) ──────────────────────────────────
+
+  API_OK=0
+  UI_OK=0
+  for i in $(seq 1 60); do
+    if [ "$API_OK" -eq 0 ] && curl -sf --max-time 2 http://127.0.0.1:3001/api/health >/dev/null 2>&1; then
+      API_OK=1
+    fi
+    if [ "$UI_OK" -eq 0 ]; then
+      HTTP_CODE="$(curl -s --max-time 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/ 2>/dev/null || echo '')"
+      if echo "$HTTP_CODE" | grep -qE '^[234]'; then
+        UI_OK=1
+      fi
+    fi
+    [ "$API_OK" -eq 1 ] && [ "$UI_OK" -eq 1 ] && break
+    [ $((i % 10)) -eq 0 ] && echo "  Waiting for services... (${i}s)"
+    sleep 1
+  done
+
+  if [ "$API_OK" -eq 0 ] || [ "$UI_OK" -eq 0 ]; then
+    echo "  WARNING: Services may still be starting. Check logs:"
+    echo "    journalctl -u diffract-api -n 30"
+    echo "    journalctl -u diffract-ui  -n 30"
+  fi
+
+  DOMAIN="$(detect_domain)"
+  if echo "$DOMAIN" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || [ "$DOMAIN" = "localhost" ]; then
+    URL="http://${DOMAIN}:3000/setup"
+  else
+    URL="https://${DOMAIN}/setup"
+  fi
+fi
+
+# ── Auto-open browser (best effort) ──────────────────────────────
+
+if [ "$(uname)" = "Darwin" ]; then
+  open "$URL" 2>/dev/null || true
+elif [ -n "${DISPLAY:-}" ] && command_exists xdg-open; then
+  xdg-open "$URL" 2>/dev/null || true
+fi
+
+# ── Final output ─────────────────────────────────────────────────
+
 echo ""
 echo "  ========================================="
 echo "  Diffract installed successfully!"
 echo "  ========================================="
 echo ""
-echo "  Next step — set up your first agent:"
+echo "  Open $URL in your browser."
 echo ""
-echo "    diffract onboard"
-echo ""
-echo "  Other commands:"
-echo "    diffract --help"
-echo "    diffract list"
-echo "    diffract doctor"
+echo "  Service logs:"
+echo "    journalctl -u diffract-api -f"
+echo "    journalctl -u diffract-ui  -f"
 echo ""

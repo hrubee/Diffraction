@@ -7,18 +7,16 @@ Diffract sandboxes AI agents with kernel-level isolation (Landlock, seccomp, net
 ## Quick Start
 
 ```bash
-# Prerequisites: Ubuntu 24.04, Docker, 4+ cores, 8GB+ RAM
-curl -fsSL https://get.docker.com | sh
-curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+# Prerequisites: Ubuntu 24.04 (Linux prod) or macOS (dev), Docker, 4+ cores, 8GB+ RAM
+curl -fsSL https://raw.githubusercontent.com/hrubee/Diffraction/main/install.sh | bash
+```
 
-# Install Diffract
-git clone https://github.com/hrubee/Diffraction.git ~/diffract
-cd ~/diffract/cli && npm install --omit=dev --ignore-scripts
-ln -sf ~/diffract/diffract.sh /usr/local/bin/diffract
+The installer provisions system dependencies, builds the UI, starts diffract-api and diffract-ui as systemd services (Linux), and prints a URL. Open that URL in your browser to finish setup.
 
-# Deploy
-export NVIDIA_API_KEY="nvapi-..."
-diffract onboard
+To install against a custom public hostname (for auto-TLS via your reverse proxy):
+
+```bash
+DIFFRACT_DOMAIN=my.host.example curl -fsSL https://raw.githubusercontent.com/hrubee/Diffraction/main/install.sh | bash
 ```
 
 ## Architecture
