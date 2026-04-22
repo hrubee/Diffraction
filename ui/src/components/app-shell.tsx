@@ -6,7 +6,7 @@ import Sidebar from "@/components/sidebar";
 import { AuthGuard } from "@/components/auth-guard";
 
 // Routes that render without the sidebar and without auth enforcement.
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PATHS = ["/login", "/setup"];
 
 interface AppShellProps {
   children: React.ReactNode;
