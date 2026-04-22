@@ -1,0 +1,29 @@
+[Unit]
+Description=Diffract API bridge (Express on :3001)
+Documentation=https://github.com/hrubee/Diffraction
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@@USER@@
+Group=@@GROUP@@
+WorkingDirectory=@@INSTALL_DIR@@/api
+Environment=NODE_ENV=production
+Environment=API_PORT=3001
+Environment=HOST=127.0.0.1
+Environment=HOME=@@USER_HOME@@
+Environment=PATH=@@NODE_DIR@@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:@@USER_HOME@@/.local/bin
+EnvironmentFile=-@@USER_HOME@@/.diffract/diffract-api.env
+ExecStart=@@NODE_BIN@@ @@INSTALL_DIR@@/api/server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=diffract-api
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
