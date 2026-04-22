@@ -6,7 +6,10 @@ const router = Router();
 
 const CADDY_TEMPLATE_PATH = "/root/diffract/deploy/caddy/Caddyfile";
 const CADDY_SANDBOX_CONF_PATH = "/etc/caddy/conf.d/sandboxes.conf";
-const DOMAIN = process.env.DIFFRACT_DOMAIN || "srv1534809.hstgr.cloud";
+if (!process.env.DIFFRACT_DOMAIN) {
+  throw new Error("DIFFRACT_DOMAIN environment variable is required — set it to your VPS hostname (e.g. export DIFFRACT_DOMAIN=yourhost.hstgr.cloud)");
+}
+const DOMAIN = process.env.DIFFRACT_DOMAIN;
 
 /** Parse `openshell forward list` to get sandbox → port mapping */
 function getForwardedPorts() {

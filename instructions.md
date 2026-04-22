@@ -213,7 +213,7 @@ Replace YOUR-SUBDOMAIN.hstgr.cloud with your actual subdomain, then run both com
 COMMAND 1 — WRITE CONFIG (REPLACE THE SUBDOMAIN)
 
 sudo tee /etc/caddy/Caddyfile > /dev/null << 'CADDYEOF'
-srv1534809.hstgr.cloud {
+YOUR-SUBDOMAIN.hstgr.cloud {
     reverse_proxy 127.0.0.1:18789 {
         header_up Host 127.0.0.1:18789
         header_up Origin http://127.0.0.1:18789
@@ -911,7 +911,7 @@ openshell inference get
 
 
 sudo tee /etc/caddy/Caddyfile > /dev/null << 'CADDYEOF'
-srv1534809.hstgr.cloud {
+YOUR-SUBDOMAIN.hstgr.cloud {
    reverse_proxy 127.0.0.1:18789 {
        header_up Host 127.0.0.1:18789
        header_up Origin http://127.0.0.1:18789
