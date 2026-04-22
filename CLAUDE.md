@@ -2,11 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## reply tonality
-You are a helpful coding assistant, but you must respond entirely in caveman language. Use short, broken sentences. Drop articles like "the", "a", "an". Replace complex words with simple cave-speak. Say things like "Ugh", "Me fix bug", "Code broken, me smash", "You run command now", etc. Keep all technical content accurate — just express it in caveman style.
-
-
-
 ## What This Is
 
 Diffract is an enterprise platform for deploying sandboxed AI agents. It combines kernel-level isolation (Landlock, seccomp, network namespaces), multi-provider inference routing, and YAML-based policy control. Built on top of NVIDIA OpenShell (sandbox runtime) and OpenClaw (agent gateway).
@@ -22,6 +17,7 @@ The `Reference/` directory contains full upstream copies of OpenShell, OpenClaw,
 ## Build & Development Commands
 
 ### CLI (Node.js — the primary interface)
+
 ```bash
 cd cli && npm install                    # install deps
 cd cli && node --test test/*.test.js     # run all unit tests
@@ -30,6 +26,7 @@ node -c cli/bin/diffract.js              # syntax check
 ```
 
 ### UI (Next.js 16 / React 19 dashboard)
+
 ```bash
 cd ui && npm install
 cd ui && npm run dev                     # dev server
@@ -37,6 +34,7 @@ cd ui && npm run build                   # production build
 ```
 
 ### Rust crates
+
 ```bash
 cargo build                              # build all crates
 cargo test                               # run all tests
@@ -44,6 +42,7 @@ cargo clippy                             # lint (pedantic + nursery enabled)
 ```
 
 ### Docs (Sphinx + MyST)
+
 ```bash
 cd cli && make docs                      # build HTML docs
 cd cli && make docs-strict               # build with warnings-as-errors
@@ -51,6 +50,7 @@ cd cli && make docs-live                  # live reload preview
 ```
 
 ### Linting & Formatting
+
 ```bash
 cd cli && make check                     # lint TS + Python
 cd cli && make format                    # auto-format
@@ -58,6 +58,7 @@ bash -n scripts/*.sh                     # shell script syntax check
 ```
 
 ### Security tests (CI runs these)
+
 ```bash
 cd cli && node --test test/security-binaries-restriction.test.js
 cd cli && node --test test/security-c2-dockerfile-injection.test.js
@@ -66,6 +67,7 @@ cd cli && node --test test/credential-exposure.test.js
 ```
 
 ### Running Diffract locally
+
 ```bash
 ./diffract.sh onboard                    # interactive setup wizard
 ./diffract.sh list                       # list sandboxes
@@ -77,14 +79,14 @@ cd cli && node --test test/credential-exposure.test.js
 
 ### Six major layers
 
-| Directory | Tech | Role |
-|-----------|------|------|
-| `cli/` | Node.js | Main `diffract` CLI — onboarding, sandbox CRUD, model management, skills hub, Telegram bridge |
-| `crates/` | Rust | `diffract-bootstrap` (deployment/Docker/PKI), `diffract-policy` (policy engine ~11K LOC), `diffract-router` (inference routing), `diffract-tui` (terminal UI ~24K LOC) |
-| `ui/` | Next.js 16 / React 19 | Enterprise web dashboard with WebSocket gateway connection |
-| `agent/` | Node.js + Swift | Multi-channel AI assistant runtime (20+ messaging platforms) |
-| `policies/` | YAML | Deny-by-default network/filesystem/process policies with service presets |
-| `deploy/` | Helm/Docker/k8s | Kubernetes StatefulSet, Dockerfiles, cluster entrypoints |
+| Directory     | Tech                  | Role                                                                                                                                                                           |
+| ------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cli/`      | Node.js               | Main `diffract` CLI — onboarding, sandbox CRUD, model management, skills hub, Telegram bridge                                                                               |
+| `crates/`   | Rust                  | `diffract-bootstrap` (deployment/Docker/PKI), `diffract-policy` (policy engine ~11K LOC), `diffract-router` (inference routing), `diffract-tui` (terminal UI ~24K LOC) |
+| `ui/`       | Next.js 16 / React 19 | Enterprise web dashboard with WebSocket gateway connection                                                                                                                     |
+| `agent/`    | Node.js + Swift       | Multi-channel AI assistant runtime (20+ messaging platforms)                                                                                                                   |
+| `policies/` | YAML                  | Deny-by-default network/filesystem/process policies with service presets                                                                                                       |
+| `deploy/`   | Helm/Docker/k8s       | Kubernetes StatefulSet, Dockerfiles, cluster entrypoints                                                                                                                       |
 
 ### How the pieces connect
 
@@ -112,6 +114,7 @@ User → diffract CLI (cli/bin/diffract.js)
 Entry point: `cli/bin/diffract.js` (~827 lines) — routes all commands.
 
 Key library modules in `cli/bin/lib/`:
+
 - `onboard.js` — 7-step interactive setup wizard with session resumability
 - `registry.js` — multi-sandbox registry at `~/.diffract/sandboxes.json`
 - `credentials.js` — credential storage at `~/.diffract/credentials.json` (mode 600)
@@ -125,6 +128,7 @@ Key library modules in `cli/bin/lib/`:
 ### Rust crates (`crates/`)
 
 10 workspace crates (Rust edition 2024, MSRV 1.88):
+
 - `diffract-bootstrap` — Gateway deployment, Docker orchestration (via bollard), PKI/mTLS cert generation, error diagnosis engine with actionable recovery steps
 - `diffract-cli` — Rust CLI binary (clap-based)
 - `diffract-core` — Shared types and utilities
@@ -155,6 +159,7 @@ Next.js 16 app with cookie-based auth. WebSocket connection to gateway at `/gate
 ### Multi-upstream sync
 
 This repo aggregates three upstream projects via `scripts/sync-upstream.sh` (runs daily in CI):
+
 - **OpenShell** → `crates/`, `proto/`, `deploy/`, `docs/`
 - **OpenClaw** → `agent/`
 - **Diffraction CLI** → `cli/`, `policies/`
@@ -186,12 +191,15 @@ The agent runtime supports env vars for: gateway auth (`GATEWAY_TOKEN`), provide
 - No emoji in technical prose
 
 <!-- mulch:start -->
+
 ## Project Expertise (Mulch)
+
 <!-- mulch-onboard-v:1 -->
 
 This project uses [Mulch](https://github.com/jayminwest/mulch) for structured expertise management.
 
 **At the start of every session**, run:
+
 ```bash
 mulch prime
 ```
@@ -201,6 +209,7 @@ Use `mulch prime --files src/foo.ts` to load only records relevant to specific f
 
 **Before completing your task**, review your work for insights worth preserving — conventions discovered,
 patterns applied, failures encountered, or decisions made — and record them:
+
 ```bash
 mulch record <domain> --type <convention|pattern|failure|decision|reference|guide> --description "..."
 ```
@@ -225,15 +234,19 @@ Mulch write commands use file locking and atomic writes — multiple agents can 
    ```bash
    mulch sync
    ```
+
 <!-- mulch:end -->
 
 <!-- seeds:start -->
+
 ## Issue Tracking (Seeds)
+
 <!-- seeds-onboard-v:1 -->
 
 This project uses [Seeds](https://github.com/jayminwest/seeds) for git-native issue tracking.
 
 **At the start of every session**, run:
+
 ```
 sd prime
 ```
@@ -241,6 +254,7 @@ sd prime
 This injects session context: rules, command reference, and workflows.
 
 **Quick reference:**
+
 - `sd ready` — Find unblocked work
 - `sd create --title "..." --type task --priority 2` — Create issue
 - `sd update <id> --status in_progress` — Claim work
@@ -249,7 +263,9 @@ This injects session context: rules, command reference, and workflows.
 - `sd sync` — Sync with git (run before pushing)
 
 ### Before You Finish
+
 1. Close completed issues: `sd close <id>`
 2. File issues for remaining work: `sd create --title "..."`
 3. Sync and push: `sd sync && git push`
+
 <!-- seeds:end -->

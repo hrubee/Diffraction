@@ -73,5 +73,27 @@
 		"status": "completed",
 		"createdAt": "2026-04-06T05:53:46.190Z",
 		"completedAt": "2026-04-09T05:00:13.994Z"
+	},
+	{
+		"id": "group-eba24683",
+		"name": "landlock-exec-fix",
+		"memberIssueIds": [
+			"Diffraction-5589"
+		],
+		"status": "active",
+		"createdAt": "2026-04-21T17:54:23.587Z",
+		"completedAt": null
+	},
+	{
+		"id": "group-59cd1dd4",
+		"name": "ui-first-install",
+		"memberIssueIds": [
+			"Diffraction-c4a5",
+			"Diffraction-5ff4",
+			"Diffraction-8aee"
+		],
+		"status": "active",
+		"createdAt": "2026-04-22T05:06:51.594Z",
+		"completedAt": null
 	}
 ]
