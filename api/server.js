@@ -16,6 +16,8 @@ import gatewayRoutes from "./routes/gateway-routes.js";
 import channelRoutes from "./routes/channels.js";
 import mcpRoutes from "./routes/mcp.js";
 import authRoutes from "./routes/auth.js";
+import statusRoutes from "./routes/status.js";
+import setupRoutes from "./routes/setup.js";
 import skillRoutes from "./routes/skills.js";
 import auditRoutes from "./routes/audit.js";
 import relayRoutes from "./routes/relay.js";
@@ -35,6 +37,10 @@ app.use("/api/auth", authRoutes);
 
 // Health check — exempt from auth (used by infrastructure probes).
 app.use("/api/health", healthRoutes);
+
+// First-run state + setup — public (no auth required).
+app.use("/api/status", statusRoutes);
+app.use("/api/setup", setupRoutes);
 
 // Apply auth middleware to all remaining /api/* routes.
 app.use("/api", requireAuth);

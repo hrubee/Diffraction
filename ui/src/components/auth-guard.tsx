@@ -2,20 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { fetchStatus } from "@/lib/status";
 
 interface AuthGuardProps {
   children: React.ReactNode;
 }
 
 /**
- * Client component that protects all routes requiring authentication.
- * On mount it calls GET /api/auth/me:
- *   - 200: renders children immediately
- *   - 401: redirects to /login
- * While the check is in-flight it shows a full-screen loading indicator.
+ * AuthGuard implements the first-run state machine:
  *
- * The /login route itself is exempt — this guard is not rendered there
- * (see layout.tsx).
+ *   1. !hasCredentials              → /setup  (admin account not created yet)
+ *   2. hasCredentials + !authed     → /login
+ *   3. authed + !hasSandbox + "/"  → /onboard (wizard for first sandbox)
+ *   4. authed                       → render children
+ *
+ * /login and /setup are exempt — AppShell excludes them via PUBLIC_PATHS.
  */
 export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
@@ -25,24 +26,39 @@ export function AuthGuard({ children }: AuthGuardProps) {
   );
 
   useEffect(() => {
-    // Re-run the check whenever the route changes so a mid-session expiry is
-    // caught on next navigation.
     const check = async () => {
       setStatus("checking");
+
       try {
-        const res = await fetch("/api/auth/me", {
+        // Step 1 — system state (public, no auth needed)
+        const appStatus = await fetchStatus();
+
+        if (!appStatus.hasCredentials) {
+          router.replace("/setup");
+          return;
+        }
+
+        // Step 2 — session auth
+        const meRes = await fetch("/api/auth/me", {
           credentials: "include",
-          // No cache — auth state must always be fresh.
           cache: "no-store",
         });
-        if (res.ok) {
-          setStatus("authenticated");
-        } else {
+
+        if (!meRes.ok) {
           setStatus("unauthenticated");
           router.replace("/login");
+          return;
         }
+
+        // Step 3 — root path with no sandbox → onboard wizard
+        if (pathname === "/" && !appStatus.hasSandbox) {
+          router.replace("/onboard");
+          return;
+        }
+
+        setStatus("authenticated");
       } catch {
-        // Network failure — treat as unauthenticated and redirect.
+        // Network failure — fall back to login
         setStatus("unauthenticated");
         router.replace("/login");
       }
@@ -60,7 +76,6 @@ export function AuthGuard({ children }: AuthGuardProps) {
   }
 
   if (status === "unauthenticated") {
-    // Redirect is in progress — render nothing to avoid flash of content.
     return null;
   }
 
