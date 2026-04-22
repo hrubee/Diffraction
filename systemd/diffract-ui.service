@@ -14,6 +14,7 @@ Environment=PORT=3000
 Environment=HOSTNAME=127.0.0.1
 Environment=HOME=@@USER_HOME@@
 Environment=PATH=@@NODE_DIR@@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:@@USER_HOME@@/.local/bin
+Environment=DIFFRACT_UI_CREDS_PATH=/var/lib/diffract-ui/credentials.json
 EnvironmentFile=-@@USER_HOME@@/.diffract/diffract-ui.env
 ExecStart=@@NODE_BIN@@ @@INSTALL_DIR@@/ui/node_modules/next/dist/bin/next start -p 3000 -H 127.0.0.1
 Restart=on-failure
