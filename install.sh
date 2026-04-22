@@ -259,6 +259,11 @@ else
   NODE_BIN="$(command -v node)"
   NODE_DIR="$(dirname "$NODE_BIN")"
 
+  # Create writable state directory for UI credentials marker
+  $SUDO mkdir -p /var/lib/diffract-ui
+  $SUDO chown "${REAL_USER}:${REAL_GROUP}" /var/lib/diffract-ui
+  $SUDO chmod 750 /var/lib/diffract-ui
+
   UNIT_CHANGED=0
   for svc in diffract-api diffract-ui; do
     SRC="$INSTALL_DIR/repo/systemd/${svc}.service"
