@@ -95,5 +95,15 @@
 		"status": "active",
 		"createdAt": "2026-04-22T05:06:51.594Z",
 		"completedAt": null
+	},
+	{
+		"id": "group-60e4b972",
+		"name": "from-scrtch-switch",
+		"memberIssueIds": [
+			"Diffraction-2d78"
+		],
+		"status": "active",
+		"createdAt": "2026-04-25T17:58:31.560Z",
+		"completedAt": null
 	}
 ]
