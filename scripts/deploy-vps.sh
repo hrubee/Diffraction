@@ -123,6 +123,7 @@ PYEOF
   fi
 else
   info "Writing $DOCKER_DAEMON_JSON..."
+  mkdir -p "$(dirname "$DOCKER_DAEMON_JSON")"
   echo "$CGROUP_CONF" > "$DOCKER_DAEMON_JSON"
   systemctl restart docker
   info "Docker restarted with cgroup host mode"
@@ -161,6 +162,8 @@ step "Step 4/7 — Repo + npm install"
 if [ -d "$REPO_DIR/.git" ]; then
   info "Repo exists at $REPO_DIR — pulling latest..."
   git -C "$REPO_DIR" pull --ff-only 2>&1 | tail -3
+elif [ -d "$REPO_DIR" ] && [ -n "$(ls -A "$REPO_DIR" 2>/dev/null)" ]; then
+  info "Repo dir already populated (rsync'd, no .git) — skipping clone"
 else
   info "Cloning $REPO_URL → $REPO_DIR..."
   git clone --depth 1 "$REPO_URL" "$REPO_DIR"
@@ -246,10 +249,12 @@ step "Step 6/7 — Caddy reverse proxy"
 if ! command -v caddy > /dev/null 2>&1; then
   info "Installing Caddy..."
   apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
+  rm -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
+        /etc/apt/sources.list.d/caddy-stable.list
   curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key \
-    | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    | gpg --batch --no-tty --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt \
-    | tee /etc/apt/sources.list.d/caddy-stable.list
+    > /etc/apt/sources.list.d/caddy-stable.list
   apt-get update -qq
   apt-get install -y -qq caddy
   info "Caddy $(caddy version) installed"
@@ -325,6 +330,14 @@ systemctl enable caddy
 systemctl restart caddy
 # Give Caddy a moment to acquire the cert / start
 sleep 2
+
+# Ensure UFW allows HTTP/HTTPS so Caddy can complete ACME challenges
+if command -v ufw > /dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+  ufw allow 80/tcp > /dev/null 2>&1 || true
+  ufw allow 443/tcp > /dev/null 2>&1 || true
+  ufw allow 443/udp > /dev/null 2>&1 || true
+  info "UFW: ports 80/443 open"
+fi
 if systemctl is-active --quiet caddy; then
   info "Caddy running"
 else
@@ -339,7 +352,7 @@ step "Step 7/7 — Start UI stack + gateway-routes sync"
 PID_DIR="/tmp/diffract-ui"
 mkdir -p "$PID_DIR"
 
-# Stop any stale services
+# Stop any stale nohup processes from previous deploys
 for pidfile in "$PID_DIR"/*.pid; do
   [ -f "$pidfile" ] || continue
   pid="$(cat "$pidfile")"
@@ -349,27 +362,76 @@ for pidfile in "$PID_DIR"/*.pid; do
   rm -f "$pidfile"
 done
 
-# API bridge
+# ── Install systemd services ────────────────────────────────────────
+REAL_USER="${SUDO_USER:-$USER}"
+[ -z "$REAL_USER" ] && REAL_USER=root
+REAL_GROUP="$(id -gn "$REAL_USER" 2>/dev/null || echo "$REAL_USER")"
+REAL_HOME="$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6 || echo "$HOME")"
+[ -z "$REAL_HOME" ] && REAL_HOME="$HOME"
+NODE_BIN="$(command -v node)"
+NODE_DIR="$(dirname "$NODE_BIN")"
+
+# State dir for UI credentials marker (mx-3dd232)
+mkdir -p /var/lib/diffract-ui
+chown "${REAL_USER}:${REAL_GROUP}" /var/lib/diffract-ui
+chmod 750 /var/lib/diffract-ui
+
+# Write DIFFRACT_DOMAIN into API env file so service picks it up
+DIFFRACT_API_ENV="${REAL_HOME}/.diffract/diffract-api.env"
+if [ -n "${DIFFRACT_DOMAIN:-}" ]; then
+  printf 'DIFFRACT_DOMAIN=%s\n' "$DIFFRACT_DOMAIN" > "$DIFFRACT_API_ENV"
+fi
+
+UNIT_CHANGED=0
+for svc in diffract-api diffract-ui; do
+  SRC="$REPO_DIR/systemd/${svc}.service"
+  DST="/etc/systemd/system/${svc}.service"
+  if [ ! -f "$SRC" ]; then
+    warn "$SRC not found — skipping $svc"
+    continue
+  fi
+  RENDERED="$(mktemp)"
+  sed \
+    -e "s|@@USER@@|${REAL_USER}|g" \
+    -e "s|@@GROUP@@|${REAL_GROUP}|g" \
+    -e "s|@@USER_HOME@@|${REAL_HOME}|g" \
+    -e "s|@@INSTALL_DIR@@|${REPO_DIR}|g" \
+    -e "s|@@NODE_BIN@@|${NODE_BIN}|g" \
+    -e "s|@@NODE_DIR@@|${NODE_DIR}|g" \
+    "$SRC" > "$RENDERED"
+  if [ ! -f "$DST" ] || ! cmp -s "$RENDERED" "$DST"; then
+    cp "$RENDERED" "$DST"
+    chmod 644 "$DST"
+    UNIT_CHANGED=1
+    info "Installed ${svc}.service"
+  else
+    info "${svc}.service unchanged"
+  fi
+  rm -f "$RENDERED"
+done
+
+[ "$UNIT_CHANGED" -eq 1 ] && systemctl daemon-reload
+systemctl enable diffract-api.service diffract-ui.service 2>/dev/null || true
+
 info "Starting API bridge on :3001..."
-cd "$REPO_DIR/api"
-DIFFRACT_DOMAIN="${DIFFRACT_DOMAIN:-}" \
-  nohup node server.js > "$PID_DIR/api.log" 2>&1 &
-echo $! > "$PID_DIR/api.pid"
+# Kill any stale processes holding the ports before systemd takes over
+fuser -k 3000/tcp 2>/dev/null || true
+fuser -k 3001/tcp 2>/dev/null || true
+sleep 1
+for svc in diffract-api diffract-ui; do
+  if [ "$UNIT_CHANGED" -eq 1 ] || ! systemctl is-active --quiet "${svc}.service" 2>/dev/null; then
+    systemctl restart "${svc}.service"
+  fi
+done
 
 # Wait for API to be ready
-for i in $(seq 1 15); do
+for i in $(seq 1 30); do
   if curl -sf http://127.0.0.1:3001/api/health > /dev/null 2>&1; then
     info "API bridge ready"
     break
   fi
   sleep 1
 done
-
-# Next.js UI
-info "Starting Next.js UI on :3000..."
-cd "$REPO_DIR/ui"
-nohup npm run start > "$PID_DIR/ui.log" 2>&1 &
-echo $! > "$PID_DIR/ui.pid"
 
 # Sandbox connect + gateway
 export PATH="$PATH:${HOME}/.local/bin"
