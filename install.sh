@@ -372,7 +372,7 @@ if [ "$(uname)" != "Darwin" ] && command_exists systemctl; then
       REPO_DIR="$INSTALL_DIR/repo" \
       SANDBOX_NAME="${SANDBOX_NAME:-my-assistant}" \
         bash "$DEPLOY_SCRIPT"
-      URL="https://${DIFFRACT_DOMAIN}/setup"
+      URL="https://${DIFFRACT_DOMAIN}/dashboard"
       WEB_STACK_DEPLOYED=1
     else
       echo "  WARNING: $DEPLOY_SCRIPT not found — skipping web-stack deploy"
