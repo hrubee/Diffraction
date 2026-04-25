@@ -9,7 +9,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/hrubee/Diffraction/main/scripts/deploy-vps.sh | bash
 #
 # Or with env overrides:
-#   DIFFRACT_DOMAIN=example.com SANDBOX_NAME=my-bot bash deploy-vps.sh
+#   DIFFRACT_DOMAIN=example.com bash deploy-vps.sh
 
 set -euo pipefail
 
@@ -29,31 +29,34 @@ fail()  { echo -e "${RED}[deploy]${NC} $1"; exit 1; }
 # ── Guard: Linux only ────────────────────────────────────────────
 [[ "$(uname -s)" == "Linux" ]] || fail "This script targets Ubuntu 24.04 Linux."
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
-
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  STEP 0 — Load environment & set defaults                   ║
 # ╚══════════════════════════════════════════════════════════════╝
-step "Step 0/7 — Loading environment"
+step "Step 0/6 — Loading environment"
 
-SANDBOX_NAME="${SANDBOX_NAME:-my-assistant}"
 REPO_DIR="${REPO_DIR:-$HOME/.diffract/repo}"
 REPO_URL="${REPO_URL:-https://github.com/hrubee/Diffraction.git}"
 DIFFRACT_DOMAIN="${DIFFRACT_DOMAIN:-}"
 OPENSHELL_VERSION="${OPENSHELL_VERSION:-0.0.21}"
 NVM_DIR="${NVM_DIR:-${HOME}/.nvm}"
+DIFFRACT_UI_REPO_URL="${DIFFRACT_UI_REPO_URL:-https://github.com/hrubee/diffract.git}"
+DIFFRACT_UI_INSTALL_DIR="${DIFFRACT_UI_INSTALL_DIR:-/opt/diffract-ui}"
+DIFFRACT_BASE_PATH="${DIFFRACT_BASE_PATH:-/dashboard}"
+DIFFRACT_UI_PORT="${DIFFRACT_UI_PORT:-3000}"
 
-export SANDBOX_NAME REPO_DIR DIFFRACT_DOMAIN
+export REPO_DIR DIFFRACT_DOMAIN DIFFRACT_UI_INSTALL_DIR DIFFRACT_BASE_PATH
 
-info "SANDBOX_NAME  = $SANDBOX_NAME"
-info "REPO_DIR      = $REPO_DIR"
-info "OPENSHELL_VER = $OPENSHELL_VERSION"
-[ -n "$DIFFRACT_DOMAIN" ] && info "DOMAIN        = $DIFFRACT_DOMAIN"
+info "REPO_DIR                = $REPO_DIR"
+info "DIFFRACT_UI_INSTALL_DIR = $DIFFRACT_UI_INSTALL_DIR"
+info "DIFFRACT_BASE_PATH      = $DIFFRACT_BASE_PATH"
+info "DIFFRACT_UI_PORT        = $DIFFRACT_UI_PORT"
+info "OPENSHELL_VER           = $OPENSHELL_VERSION"
+[ -n "$DIFFRACT_DOMAIN" ] && info "DOMAIN                  = $DIFFRACT_DOMAIN"
 
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  STEP 1 — System prerequisites + Node 22                    ║
 # ╚══════════════════════════════════════════════════════════════╝
-step "Step 1/7 — System prerequisites + Node 22"
+step "Step 1/6 — System prerequisites + Node 22"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -91,7 +94,7 @@ info "Node $(node -v) / npm $(npm --version) ready"
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  STEP 2 — Docker + cgroup fix                               ║
 # ╚══════════════════════════════════════════════════════════════╝
-step "Step 2/7 — Docker + cgroup fix"
+step "Step 2/6 — Docker + cgroup fix"
 
 if command -v docker > /dev/null 2>&1 && docker info > /dev/null 2>&1; then
   info "Docker already running: $(docker --version)"
@@ -104,7 +107,6 @@ fi
 
 # OpenShell requires host cgroupns mode (mx-631790)
 DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
-CGROUP_CONF='{"default-cgroupns-mode":"host"}'
 if [ -f "$DOCKER_DAEMON_JSON" ]; then
   if ! python3 -c "import json,sys; d=json.load(open('$DOCKER_DAEMON_JSON')); sys.exit(0 if d.get('default-cgroupns-mode')=='host' else 1)" 2>/dev/null; then
     info "Patching $DOCKER_DAEMON_JSON for cgroup host mode..."
@@ -124,7 +126,7 @@ PYEOF
 else
   info "Writing $DOCKER_DAEMON_JSON..."
   mkdir -p "$(dirname "$DOCKER_DAEMON_JSON")"
-  echo "$CGROUP_CONF" > "$DOCKER_DAEMON_JSON"
+  echo '{"default-cgroupns-mode":"host"}' > "$DOCKER_DAEMON_JSON"
   systemctl restart docker
   info "Docker restarted with cgroup host mode"
 fi
@@ -132,9 +134,8 @@ fi
 # ╔══════════════════════════════════════════════════════════════╗
 # ║  STEP 3 — OpenShell v${OPENSHELL_VERSION}                   ║
 # ╚══════════════════════════════════════════════════════════════╝
-step "Step 3/7 — OpenShell v${OPENSHELL_VERSION}"
+step "Step 3/6 — OpenShell v${OPENSHELL_VERSION}"
 
-OPENSHELL_BIN="${HOME}/.local/bin/openshell"
 export PATH="$PATH:${HOME}/.local/bin"
 
 if command -v openshell > /dev/null 2>&1; then
@@ -155,10 +156,11 @@ if ! command -v openshell > /dev/null 2>&1; then
 fi
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  STEP 4 — Clone / update repo + npm install                 ║
+# ║  STEP 4 — Diffract CLI repo + From Scrtch UI build          ║
 # ╚══════════════════════════════════════════════════════════════╝
-step "Step 4/7 — Repo + npm install"
+step "Step 4/6 — Diffract CLI repo + UI build"
 
+# 4a — Clone / update CLI repo
 if [ -d "$REPO_DIR/.git" ]; then
   info "Repo exists at $REPO_DIR — pulling latest..."
   git -C "$REPO_DIR" pull --ff-only 2>&1 | tail -3
@@ -169,16 +171,11 @@ else
   git clone --depth 1 "$REPO_URL" "$REPO_DIR"
 fi
 
-info "Installing API bridge deps..."
-cd "$REPO_DIR/api" && npm install --silent
-
-info "Installing UI deps + building..."
-cd "$REPO_DIR/ui" && npm install --silent && npm run build 2>&1 | tail -5
-
+# 4b — CLI npm install
 info "Installing CLI deps..."
 (cd "$REPO_DIR/cli" && npm install --ignore-scripts --silent)
 
-# Create diffract wrapper in /usr/local/bin
+# 4c — /usr/local/bin/diffract wrapper
 BIN_DIR=/usr/local/bin
 WRAPPER=$BIN_DIR/diffract
 if [ ! -f "$WRAPPER" ] || ! grep -q "diffract.sh" "$WRAPPER" 2>/dev/null; then
@@ -198,54 +195,63 @@ exec $REPO_DIR/diffract.sh \"\$@\""
   info "diffract wrapper created at $WRAPPER"
 fi
 
-info "Repo ready at $REPO_DIR"
+info "CLI repo ready at $REPO_DIR"
 
-# ╔══════════════════════════════════════════════════════════════╗
-# ║  STEP 5 — Non-interactive onboard                           ║
-# ╚══════════════════════════════════════════════════════════════╝
-step "Step 5/7 — Non-interactive onboard"
-
-mkdir -p "${HOME}/.diffract"
-
-# Build a minimal .diffract/config.json if not already present
-DIFFRACT_CONFIG="${HOME}/.diffract/config.json"
-if [ ! -f "$DIFFRACT_CONFIG" ]; then
-  info "Writing initial diffract config..."
-  python3 - <<PYEOF
-import json, os
-cfg = {
-    "sandbox_name": os.environ.get("SANDBOX_NAME", "my-assistant"),
-    "provider": os.environ.get("DIFFRACT_PROVIDER", "nvidia"),
-    "model": os.environ.get("DIFFRACT_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
-    "domain": os.environ.get("DIFFRACT_DOMAIN", ""),
-    "nvidia_api_key": os.environ.get("NVIDIA_API_KEY", ""),
-    "onboarded": False,
-}
-with open("$DIFFRACT_CONFIG", "w") as f:
-    json.dump(cfg, f, indent=2)
-PYEOF
+# 4d — Clone / update From Scrtch UI repo
+mkdir -p "$DIFFRACT_UI_INSTALL_DIR"
+if [ -d "$DIFFRACT_UI_INSTALL_DIR/.git" ]; then
+  info "UI repo exists at $DIFFRACT_UI_INSTALL_DIR — pulling latest..."
+  git -C "$DIFFRACT_UI_INSTALL_DIR" pull --ff-only 2>&1 | tail -3
+elif [ -d "$DIFFRACT_UI_INSTALL_DIR" ] && [ -n "$(ls -A "$DIFFRACT_UI_INSTALL_DIR" 2>/dev/null)" ]; then
+  info "UI dir already populated — skipping clone"
+else
+  info "Cloning $DIFFRACT_UI_REPO_URL → $DIFFRACT_UI_INSTALL_DIR..."
+  git clone --depth 1 "$DIFFRACT_UI_REPO_URL" "$DIFFRACT_UI_INSTALL_DIR"
 fi
 
-# Run onboard non-interactively
-# DIFFRACTION_NON_INTERACTIVE=1 skips all prompts; SANDBOX_NAME is pre-set
-DIFFRACTION_NON_INTERACTIVE=1 \
-  SANDBOX_NAME="$SANDBOX_NAME" \
-  PATH="$PATH:${HOME}/.local/bin" \
-  node "$REPO_DIR/cli/bin/diffract.js" onboard \
-  --non-interactive \
-  2>&1 | tail -20 || {
-    warn "Onboard exited non-zero (may be already complete or interactive step was skipped)."
-    warn "Check: node $REPO_DIR/cli/bin/diffract.js doctor"
-  }
+# 4e — UI npm install
+info "Installing UI deps..."
+(cd "$DIFFRACT_UI_INSTALL_DIR" && npm install --silent)
 
-info "Onboard complete"
+# 4f — Build (standalone output, with basePath)
+info "Building From Scrtch UI (basePath=${DIFFRACT_BASE_PATH})..."
+(cd "$DIFFRACT_UI_INSTALL_DIR" && \
+  NEXT_PUBLIC_BASE_PATH="$DIFFRACT_BASE_PATH" npm run build 2>&1 | tail -5)
+
+# 4g — Stage static + public into standalone tree (mx-659479)
+STANDALONE="$DIFFRACT_UI_INSTALL_DIR/.next/standalone"
+[ -d "$STANDALONE" ] || fail "Standalone build missing at $STANDALONE — check that next.config.ts sets output:'standalone'"
+info "Staging static assets into standalone tree..."
+mkdir -p "$STANDALONE/.next"
+rm -rf "$STANDALONE/.next/static"
+cp -R "$DIFFRACT_UI_INSTALL_DIR/.next/static" "$STANDALONE/.next/static"
+if [ -d "$DIFFRACT_UI_INSTALL_DIR/public" ]; then
+  rm -rf "$STANDALONE/public"
+  cp -R "$DIFFRACT_UI_INSTALL_DIR/public" "$STANDALONE/public"
+fi
+
+# 4h — Patch standalone server for 5 GB streaming uploads (mx-668974)
+info "Patching standalone server timeouts..."
+bash "$DIFFRACT_UI_INSTALL_DIR/scripts/patch-standalone-timeouts.sh" "$DIFFRACT_UI_INSTALL_DIR"
+
+# 4i — Write .env.production
+info "Writing .env.production..."
+cat > "$DIFFRACT_UI_INSTALL_DIR/.env.production" <<ENVEOF
+NODE_ENV=production
+PORT=${DIFFRACT_UI_PORT}
+HOSTNAME=127.0.0.1
+NEXT_PUBLIC_BASE_PATH=${DIFFRACT_BASE_PATH}
+DIFFRACT_REPO_DIR=${REPO_DIR}
+DIFFRACT_BIN=/usr/local/bin/diffract
+ENVEOF
+
+info "UI build complete"
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  STEP 6 — Caddy reverse proxy                               ║
+# ║  STEP 5 — Caddy reverse proxy                               ║
 # ╚══════════════════════════════════════════════════════════════╝
-step "Step 6/7 — Caddy reverse proxy"
+step "Step 5/6 — Caddy reverse proxy"
 
-# Install Caddy from official apt repo
 if ! command -v caddy > /dev/null 2>&1; then
   info "Installing Caddy..."
   apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
@@ -262,7 +268,7 @@ else
   info "Caddy already installed: $(caddy version)"
 fi
 
-# Detect public IP and generate Caddyfile inline
+# Detect public IP
 detect_public_ip() {
   local ip
   ip="$(curl -sf --max-time 5 https://ifconfig.me 2>/dev/null)" && echo "$ip" && return
@@ -273,7 +279,7 @@ detect_public_ip() {
 
 CADDY_DIR="/etc/caddy"
 CADDY_CONF="$CADDY_DIR/Caddyfile"
-mkdir -p "$CADDY_DIR"
+mkdir -p "$CADDY_DIR/conf.d"
 
 if [ -z "${DIFFRACT_DOMAIN:-}" ]; then
   DIFFRACT_DOMAIN="$(detect_public_ip)"
@@ -284,17 +290,16 @@ if [ -z "${DIFFRACT_DOMAIN:-}" ]; then
   fi
 fi
 
-# If we only have an IP, try to resolve the FQDN for Caddy auto-TLS
+# Resolve FQDN for auto-TLS when we only have an IP
 if echo "${DIFFRACT_DOMAIN:-}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
   FQDN="$(hostname -f 2>/dev/null || true)"
-  # Accept FQDN only if it contains a dot and is not itself an IP
   if echo "${FQDN:-}" | grep -qE '\.' && ! echo "${FQDN:-}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
     info "Resolved FQDN: $FQDN — using for Caddy auto-TLS (HTTPS)"
     DIFFRACT_DOMAIN="$FQDN"
   fi
 fi
 
-# Use :80 for bare IP addresses (IPv4 or IPv6); domain name triggers Caddy's automatic TLS
+# Use :80 for bare IP addresses; domain name triggers auto-TLS
 if echo "${DIFFRACT_DOMAIN:-}" | grep -qE '^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F:]+:[0-9a-fA-F:]*)$'; then
   SITE_ADDR=":80"
 else
@@ -302,45 +307,43 @@ else
 fi
 
 info "Writing Caddyfile (site: ${SITE_ADDR})..."
-mkdir -p "$CADDY_DIR/conf.d"
 cat > "$CADDY_CONF" <<CADDYEOF
 ${SITE_ADDR} {
-    @websocket {
+    request_body {
+        max_size 5368709120
+    }
+
+    @any_sandbox_ws {
+        path_regexp sandbox_ws ^/[^/]+/oc(/.*)?$
         header Connection *Upgrade*
         header Upgrade websocket
     }
-    reverse_proxy @websocket 127.0.0.1:18789
-
-    handle /__openclaw/* {
+    handle @any_sandbox_ws {
         reverse_proxy 127.0.0.1:18789 {
             header_up Host {hostport}
+            header_up Origin http://127.0.0.1:18789
         }
     }
 
-    handle /api/* {
-        reverse_proxy 127.0.0.1:3001
-    }
+    import /etc/caddy/conf.d/*.conf
 
     handle {
-        reverse_proxy 127.0.0.1:3000
+        reverse_proxy 127.0.0.1:${DIFFRACT_UI_PORT}
     }
 }
-
-import /etc/caddy/conf.d/*.conf
 CADDYEOF
 
 systemctl enable caddy
 systemctl restart caddy
-# Give Caddy a moment to acquire the cert / start
 sleep 2
 
-# Ensure UFW allows HTTP/HTTPS so Caddy can complete ACME challenges
 if command -v ufw > /dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
   ufw allow 80/tcp > /dev/null 2>&1 || true
   ufw allow 443/tcp > /dev/null 2>&1 || true
   ufw allow 443/udp > /dev/null 2>&1 || true
   info "UFW: ports 80/443 open"
 fi
+
 if systemctl is-active --quiet caddy; then
   info "Caddy running"
 else
@@ -348,157 +351,112 @@ else
 fi
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  STEP 7 — Start UI stack + gateway-routes sync              ║
+# ║  STEP 6 — diffract-ui systemd service                       ║
 # ╚══════════════════════════════════════════════════════════════╝
-step "Step 7/7 — Start UI stack + gateway-routes sync"
+step "Step 6/6 — diffract-ui systemd service"
 
-PID_DIR="/tmp/diffract-ui"
-mkdir -p "$PID_DIR"
-
-# Stop any stale nohup processes from previous deploys
-for pidfile in "$PID_DIR"/*.pid; do
-  [ -f "$pidfile" ] || continue
-  pid="$(cat "$pidfile")"
-  if kill -0 "$pid" 2>/dev/null; then
-    kill "$pid" 2>/dev/null || true
-  fi
-  rm -f "$pidfile"
-done
-
-# ── Install systemd services ────────────────────────────────────────
 REAL_USER="${SUDO_USER:-$USER}"
 [ -z "$REAL_USER" ] && REAL_USER=root
 REAL_GROUP="$(id -gn "$REAL_USER" 2>/dev/null || echo "$REAL_USER")"
 REAL_HOME="$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6 || echo "$HOME")"
 [ -z "$REAL_HOME" ] && REAL_HOME="$HOME"
 NODE_BIN="$(command -v node)"
-NODE_DIR="$(dirname "$NODE_BIN")"
 
-# State dir for UI credentials marker (mx-3dd232)
-mkdir -p /var/lib/diffract-ui
-chown "${REAL_USER}:${REAL_GROUP}" /var/lib/diffract-ui
-chmod 750 /var/lib/diffract-ui
+# Ensure UI install dir is owned by the service user
+chown -R "${REAL_USER}:${REAL_GROUP}" "$DIFFRACT_UI_INSTALL_DIR" 2>/dev/null || true
 
-# Write DIFFRACT_DOMAIN into API env file so service picks it up
-DIFFRACT_API_ENV="${REAL_HOME}/.diffract/diffract-api.env"
-if [ -n "${DIFFRACT_DOMAIN:-}" ]; then
-  printf 'DIFFRACT_DOMAIN=%s\n' "$DIFFRACT_DOMAIN" > "$DIFFRACT_API_ENV"
+# Retire legacy diffract-api service if present
+if [ -f /etc/systemd/system/diffract-api.service ]; then
+  info "Retiring legacy diffract-api.service..."
+  systemctl stop diffract-api.service 2>/dev/null || true
+  systemctl disable diffract-api.service 2>/dev/null || true
+  rm -f /etc/systemd/system/diffract-api.service
+  fuser -k 3001/tcp 2>/dev/null || true
 fi
+
+# Render the From Scrtch UI systemd template
+UNIT_SRC="$DIFFRACT_UI_INSTALL_DIR/systemd/diffract-ui.service"
+UNIT_DST="/etc/systemd/system/diffract-ui.service"
+
+if [ ! -f "$UNIT_SRC" ]; then
+  fail "Systemd template not found at $UNIT_SRC"
+fi
+
+RENDERED="$(mktemp)"
+sed \
+  -e "s|@@USER@@|${REAL_USER}|g" \
+  -e "s|@@INSTALL_DIR@@|${DIFFRACT_UI_INSTALL_DIR}|g" \
+  -e "s|@@PORT@@|${DIFFRACT_UI_PORT}|g" \
+  -e "s|@@NODE_BIN@@|${NODE_BIN}|g" \
+  "$UNIT_SRC" > "$RENDERED"
 
 UNIT_CHANGED=0
-for svc in diffract-api diffract-ui; do
-  SRC="$REPO_DIR/systemd/${svc}.service"
-  DST="/etc/systemd/system/${svc}.service"
-  if [ ! -f "$SRC" ]; then
-    warn "$SRC not found — skipping $svc"
-    continue
-  fi
-  RENDERED="$(mktemp)"
-  sed \
-    -e "s|@@USER@@|${REAL_USER}|g" \
-    -e "s|@@GROUP@@|${REAL_GROUP}|g" \
-    -e "s|@@USER_HOME@@|${REAL_HOME}|g" \
-    -e "s|@@INSTALL_DIR@@|${REPO_DIR}|g" \
-    -e "s|@@NODE_BIN@@|${NODE_BIN}|g" \
-    -e "s|@@NODE_DIR@@|${NODE_DIR}|g" \
-    "$SRC" > "$RENDERED"
-  if [ ! -f "$DST" ] || ! cmp -s "$RENDERED" "$DST"; then
-    cp "$RENDERED" "$DST"
-    chmod 644 "$DST"
-    UNIT_CHANGED=1
-    info "Installed ${svc}.service"
-  else
-    info "${svc}.service unchanged"
-  fi
-  rm -f "$RENDERED"
-done
+if [ ! -f "$UNIT_DST" ] || ! cmp -s "$RENDERED" "$UNIT_DST"; then
+  cp "$RENDERED" "$UNIT_DST"
+  chmod 644 "$UNIT_DST"
+  UNIT_CHANGED=1
+  info "Installed diffract-ui.service"
+else
+  info "diffract-ui.service unchanged"
+fi
+rm -f "$RENDERED"
 
 [ "$UNIT_CHANGED" -eq 1 ] && systemctl daemon-reload
-systemctl enable diffract-api.service diffract-ui.service 2>/dev/null || true
+systemctl enable diffract-ui.service 2>/dev/null || true
 
-info "Starting API bridge on :3001..."
-# Kill any stale processes holding the ports before systemd takes over
-fuser -k 3000/tcp 2>/dev/null || true
-fuser -k 3001/tcp 2>/dev/null || true
+# Kill stale process on UI port before starting service
+fuser -k "${DIFFRACT_UI_PORT}/tcp" 2>/dev/null || true
 sleep 1
-for svc in diffract-api diffract-ui; do
-  if [ "$UNIT_CHANGED" -eq 1 ] || ! systemctl is-active --quiet "${svc}.service" 2>/dev/null; then
-    systemctl restart "${svc}.service"
-  fi
-done
 
-# Wait for API to be ready
-for i in $(seq 1 30); do
-  if curl -sf http://127.0.0.1:3001/api/health > /dev/null 2>&1; then
-    info "API bridge ready"
-    break
-  fi
-  sleep 1
-done
-
-# Sandbox connect + gateway
-export PATH="$PATH:${HOME}/.local/bin"
-OPENSHELL_BIN="$(command -v openshell 2>/dev/null || echo "${HOME}/.local/bin/openshell")"
-
-if "$OPENSHELL_BIN" sandbox list 2>/dev/null | grep -q "$SANDBOX_NAME"; then
-  info "Connecting sandbox $SANDBOX_NAME and starting gateway..."
-
-  # Kill stale port forward
-  fuser -k 18789/tcp 2>/dev/null || true
-  sleep 1
-
-  # Start gateway via FIFO (pattern from start-ui.sh — mx-2191ba)
-  PIPE="$PID_DIR/sandbox-pipe"
-  [ -p "$PIPE" ] || mkfifo "$PIPE"
-  nohup bash -c "cat '$PIPE' | $OPENSHELL_BIN sandbox connect $SANDBOX_NAME" \
-    > "$PID_DIR/connect.log" 2>&1 &
-  echo $! > "$PID_DIR/connect.pid"
-  sleep 5
-
-  echo "export HOME=/sandbox && nohup /usr/local/bin/diffract gateway run \
-    --bind loopback --port 18789 > /tmp/gw.log 2>&1 &" > "$PIPE" &
-  sleep 8
-
-  if ss -tlnp 2>/dev/null | grep -q ":18789 " && \
-     curl -sf http://127.0.0.1:18789/health 2>/dev/null | grep -q "ok"; then
-    info "Gateway healthy on :18789"
-  else
-    warn "Gateway not yet responding. Check: $PID_DIR/connect.log"
-  fi
-else
-  warn "Sandbox '$SANDBOX_NAME' not found — skipping gateway connect."
-  warn "Run: openshell sandbox list"
+if [ "$UNIT_CHANGED" -eq 1 ] || ! systemctl is-active --quiet diffract-ui.service 2>/dev/null; then
+  systemctl restart diffract-ui.service
 fi
 
-# Gateway-routes sync — regenerate Caddy config from live sandbox ports
-info "Syncing gateway routes..."
-SYNC_RESP="$(curl -sf -X POST http://127.0.0.1:3001/api/gateway-routes/sync 2>/dev/null || echo '')"
-if echo "$SYNC_RESP" | grep -q '"ok":true'; then
-  ROUTES="$(echo "$SYNC_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('routes',0))" 2>/dev/null || echo '?')"
-  info "Routes synced ($ROUTES sandbox routes written to Caddy)"
-  systemctl reload caddy 2>/dev/null || true
+# Wait up to 30s for UI to be reachable
+info "Waiting for UI at http://127.0.0.1:${DIFFRACT_UI_PORT}${DIFFRACT_BASE_PATH}/..."
+for i in $(seq 1 30); do
+  HTTP_CODE="$(curl -s --max-time 2 -o /dev/null -w '%{http_code}' \
+    "http://127.0.0.1:${DIFFRACT_UI_PORT}${DIFFRACT_BASE_PATH}/" 2>/dev/null || echo '')"
+  if echo "$HTTP_CODE" | grep -qE '^[234]'; then
+    info "UI ready (HTTP $HTTP_CODE)"
+    break
+  fi
+  [ "$i" -eq 30 ] && warn "UI did not respond within 30s — check: journalctl -u diffract-ui -n 30"
+  sleep 1
+done
+
+# Re-sync routes if any sandboxes already exist
+export PATH="$PATH:${HOME}/.local/bin"
+OPENSHELL_BIN="$(command -v openshell 2>/dev/null || echo "${HOME}/.local/bin/openshell")"
+if "$OPENSHELL_BIN" sandbox list 2>/dev/null | \
+   awk 'NR>1 && $1 != "" && $1 !~ /^[-=]+$/ {found=1; exit} END {exit !found}'; then
+  info "Syncing sandbox routes + forward watchdogs..."
+  DIFFRACT_REPO_DIR="$REPO_DIR" \
+    bash "$DIFFRACT_UI_INSTALL_DIR/scripts/sync-sandbox-routes.sh" || \
+    warn "sync-sandbox-routes.sh exited non-zero — check manually"
 else
-  warn "Gateway-routes sync returned no response (API may still be starting). Run:"
-  warn "  curl -X POST http://127.0.0.1:3001/api/gateway-routes/sync"
+  info "No sandboxes found — skipping route sync (will run after first onboard)"
 fi
 
 # ── Final banner ─────────────────────────────────────────────────
+if echo "${DIFFRACT_DOMAIN:-}" | grep -qE '^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F:]+:[0-9a-fA-F:]*)$' \
+   || [ -z "${DIFFRACT_DOMAIN:-}" ]; then
+  DASHBOARD_URL="http://${DIFFRACT_DOMAIN:-127.0.0.1}${DIFFRACT_BASE_PATH}"
+else
+  DASHBOARD_URL="https://${DIFFRACT_DOMAIN}${DIFFRACT_BASE_PATH}"
+fi
+
 echo ""
 echo -e "  ${BOLD}╔═══════════════════════════════════════════════════════╗${NC}"
 echo -e "  ${BOLD}║  Diffract VPS deployment complete                     ║${NC}"
 echo -e "  ${BOLD}╠═══════════════════════════════════════════════════════╣${NC}"
-echo -e "  ${BOLD}║${NC}  Sandbox:    ${SANDBOX_NAME}"
-if [ -n "${DIFFRACT_DOMAIN:-}" ]; then
-  echo -e "  ${BOLD}║${NC}  Public:     https://${DIFFRACT_DOMAIN}"
-else
-  echo -e "  ${BOLD}║${NC}  Public:     set DIFFRACT_DOMAIN for TLS"
-fi
-echo -e "  ${BOLD}║${NC}  API bridge: http://127.0.0.1:3001"
-echo -e "  ${BOLD}║${NC}  Web UI:     http://127.0.0.1:3000"
-echo -e "  ${BOLD}║${NC}  Gateway:    http://127.0.0.1:18789"
-echo -e "  ${BOLD}║${NC}  Logs:       $PID_DIR/*.log"
+echo -e "  ${BOLD}║${NC}  Dashboard:  ${DASHBOARD_URL}"
+echo -e "  ${BOLD}║${NC}  UI server:  http://127.0.0.1:${DIFFRACT_UI_PORT}${DIFFRACT_BASE_PATH}"
 echo -e "  ${BOLD}║${NC}"
-echo -e "  ${BOLD}║${NC}  Re-sync routes:  curl -X POST http://127.0.0.1:3001/api/gateway-routes/sync"
-echo -e "  ${BOLD}║${NC}  Stop services:   bash $REPO_DIR/scripts/start-ui.sh --stop"
+echo -e "  ${BOLD}║${NC}  Logs:"
+echo -e "  ${BOLD}║${NC}    journalctl -u diffract-ui -f"
+echo -e "  ${BOLD}║${NC}    journalctl -u caddy -f"
+echo -e "  ${BOLD}║${NC}"
+echo -e "  ${BOLD}║${NC}  Next step:  open the dashboard URL and submit the SetupForm"
 echo -e "  ${BOLD}╚═══════════════════════════════════════════════════════╝${NC}"
 echo ""
