@@ -4,6 +4,9 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/hrubee/Diffraction/main/install.sh | bash
 #
+# With domain (full web stack — recommended on a VPS):
+#   DIFFRACT_DOMAIN=example.com bash <(curl -fsSL https://raw.githubusercontent.com/hrubee/Diffraction/main/install.sh)
+#
 # What this does:
 #   1. Installs system dependencies (git, curl) if missing
 #   2. Installs Node.js via nvm if missing
@@ -13,6 +16,8 @@
 #   6. Installs CLI + API + UI dependencies
 #   7. Builds the UI
 #   8. Installs and starts systemd services (Linux only)
+#   9. [Linux] Chains to scripts/deploy-vps.sh when DIFFRACT_DOMAIN is set
+#      — installs Caddy, configures HTTPS, starts gateway, opens UFW 80/443
 
 set -euo pipefail
 
@@ -344,6 +349,47 @@ else
   fi
 fi
 
+# ── VPS web-stack chain (Linux only) ──────────────────────────────
+
+WEB_STACK_DEPLOYED=0
+if [ "$(uname)" != "Darwin" ] && command_exists systemctl; then
+  DEPLOY_SCRIPT="$INSTALL_DIR/repo/scripts/deploy-vps.sh"
+
+  # Prompt only when stdin is a real TTY (not a curl pipe)
+  if [ -z "${DIFFRACT_DOMAIN:-}" ] && [ -t 0 ]; then
+    printf "\n  Enter your public domain or IP for HTTPS (leave blank to skip): "
+    read -r _domain_input
+    [ -n "${_domain_input:-}" ] && DIFFRACT_DOMAIN="$_domain_input"
+  fi
+
+  if [ -n "${DIFFRACT_DOMAIN:-}" ]; then
+    if [ -f "$DEPLOY_SCRIPT" ]; then
+      echo ""
+      echo "  ─────────────────────────────────────────────────────────"
+      echo "  Chaining web-stack deploy for DIFFRACT_DOMAIN=${DIFFRACT_DOMAIN}..."
+      echo "  ─────────────────────────────────────────────────────────"
+      DIFFRACT_DOMAIN="${DIFFRACT_DOMAIN}" \
+      REPO_DIR="$INSTALL_DIR/repo" \
+      SANDBOX_NAME="${SANDBOX_NAME:-my-assistant}" \
+        bash "$DEPLOY_SCRIPT"
+      URL="https://${DIFFRACT_DOMAIN}/setup"
+      WEB_STACK_DEPLOYED=1
+    else
+      echo "  WARNING: $DEPLOY_SCRIPT not found — skipping web-stack deploy"
+    fi
+  else
+    echo ""
+    echo "  ─────────────────────────────────────────────────────────"
+    echo "  CLI-only install complete."
+    echo "  To also deploy the web dashboard (Caddy, HTTPS, gateway),"
+    echo "  re-run with DIFFRACT_DOMAIN set:"
+    echo ""
+    echo "    DIFFRACT_DOMAIN=yourdomain.com \\"
+    echo "      bash <(curl -fsSL https://raw.githubusercontent.com/hrubee/Diffraction/main/install.sh)"
+    echo "  ─────────────────────────────────────────────────────────"
+  fi
+fi
+
 # ── Auto-open browser (best effort) ──────────────────────────────
 
 if [ "$(uname)" = "Darwin" ]; then
@@ -359,9 +405,17 @@ echo "  ========================================="
 echo "  Diffract installed successfully!"
 echo "  ========================================="
 echo ""
-echo "  Open $URL in your browser."
-echo ""
-echo "  Service logs:"
-echo "    journalctl -u diffract-api -f"
-echo "    journalctl -u diffract-ui  -f"
+if [ "$WEB_STACK_DEPLOYED" -eq 1 ] 2>/dev/null; then
+  echo "  Dashboard: $URL"
+  echo ""
+  echo "  Service logs:"
+  echo "    journalctl -u diffract-api -f"
+  echo "    journalctl -u diffract-ui  -f"
+  echo "    journalctl -u caddy        -f"
+else
+  echo "  Next step:  diffract onboard"
+  if [ -n "${URL:-}" ]; then
+    echo "  Dev URL:    $URL"
+  fi
+fi
 echo ""
