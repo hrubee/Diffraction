@@ -302,6 +302,7 @@ else
 fi
 
 info "Writing Caddyfile (site: ${SITE_ADDR})..."
+mkdir -p "$CADDY_DIR/conf.d"
 cat > "$CADDY_CONF" <<CADDYEOF
 ${SITE_ADDR} {
     @websocket {
@@ -324,6 +325,8 @@ ${SITE_ADDR} {
         reverse_proxy 127.0.0.1:3000
     }
 }
+
+import /etc/caddy/conf.d/*.conf
 CADDYEOF
 
 systemctl enable caddy
