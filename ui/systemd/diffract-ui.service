@@ -1,0 +1,28 @@
+[Unit]
+Description=Diffract UI (Next.js)
+Documentation=https://github.com/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@@USER@@
+WorkingDirectory=@@INSTALL_DIR@@
+EnvironmentFile=-@@INSTALL_DIR@@/.env.production
+Environment=NODE_ENV=production
+Environment=PORT=@@PORT@@
+Environment=HOSTNAME=0.0.0.0
+ExecStart=@@NODE_BIN@@ @@INSTALL_DIR@@/.next/standalone/server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
