@@ -18,10 +18,16 @@
 #   8. Installs and starts systemd services (Linux only)
 #   9. [Linux] Chains to scripts/deploy-vps.sh when DIFFRACT_DOMAIN is set
 #      — installs Caddy, configures HTTPS, starts gateway, opens UFW 80/443
+#
+# Environment variables:
+#   DIFFRACT_DOMAIN        Public domain or IP for HTTPS (triggers web-stack deploy)
+#   DIFFRACT_REPO_URL      Override source URL — git clone URL or tarball (.tar.gz/.tgz/.zip)
+#                          Default: https://github.com/hrubee/Diffraction.git
+#                          Example: DIFFRACT_REPO_URL=https://diffraction.in/release.tar.gz
 
 set -euo pipefail
 
-REPO_URL="https://github.com/hrubee/Diffraction.git"
+REPO_URL="${DIFFRACT_REPO_URL:-https://github.com/hrubee/Diffraction.git}"
 INSTALL_DIR="${DIFFRACT_HOME:-$HOME/.diffract}"
 BIN_DIR="/usr/local/bin"
 NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -170,21 +176,74 @@ echo "  ✓ OpenShell $(openshell --version 2>/dev/null || echo 'installed')"
 
 echo "  [5/8] Setting up Diffract..."
 
-# Capture current HEAD before any update (for change detection)
-OLD_HEAD="$(cd "$INSTALL_DIR/repo" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo '')"
-
-if [ -d "$INSTALL_DIR/repo" ]; then
-  echo "  Updating existing installation..."
-  (cd "$INSTALL_DIR/repo" && git pull --rebase --quiet 2>/dev/null || true)
-else
-  mkdir -p "$INSTALL_DIR"
-  git clone --depth 1 "$REPO_URL" "$INSTALL_DIR/repo"
-fi
-
-NEW_HEAD="$(cd "$INSTALL_DIR/repo" && git rev-parse HEAD)"
 CODE_CHANGED=0
-if [ -z "$OLD_HEAD" ] || [ "$OLD_HEAD" != "$NEW_HEAD" ]; then
-  CODE_CHANGED=1
+
+case "$REPO_URL" in
+  *.tar.gz|*.tgz) _REPO_MODE=tarball ;;
+  *.zip)          _REPO_MODE=zip ;;
+  *)              _REPO_MODE=git ;;
+esac
+
+if [ "$_REPO_MODE" = "git" ]; then
+  # Capture current HEAD before any update (for change detection)
+  OLD_HEAD="$(cd "$INSTALL_DIR/repo" 2>/dev/null && git rev-parse HEAD 2>/dev/null || echo '')"
+
+  if [ -d "$INSTALL_DIR/repo" ]; then
+    echo "  Updating existing installation..."
+    (cd "$INSTALL_DIR/repo" && git pull --rebase --quiet 2>/dev/null || true)
+  else
+    mkdir -p "$INSTALL_DIR"
+    git clone --depth 1 "$REPO_URL" "$INSTALL_DIR/repo"
+  fi
+
+  NEW_HEAD="$(cd "$INSTALL_DIR/repo" && git rev-parse HEAD)"
+  if [ -z "$OLD_HEAD" ] || [ "$OLD_HEAD" != "$NEW_HEAD" ]; then
+    CODE_CHANGED=1
+  fi
+
+else
+  # Tarball / zip download mode — no git history required
+  SHA_MARKER="$INSTALL_DIR/.tarball-sha256"
+  OLD_SHA="$(cat "$SHA_MARKER" 2>/dev/null || echo '')"
+
+  _TMP_ARCHIVE="$(mktemp)"
+  echo "  Downloading $REPO_URL..."
+  curl -fsSL "$REPO_URL" -o "$_TMP_ARCHIVE"
+
+  # sha256sum (Linux) or shasum -a 256 (macOS)
+  NEW_SHA="$(sha256sum "$_TMP_ARCHIVE" 2>/dev/null | awk '{print $1}')"
+  [ -z "$NEW_SHA" ] && NEW_SHA="$(shasum -a 256 "$_TMP_ARCHIVE" 2>/dev/null | awk '{print $1}')"
+
+  if [ "$OLD_SHA" = "$NEW_SHA" ] && [ -d "$INSTALL_DIR/repo" ]; then
+    echo "  No changes detected (sha256 unchanged) — skipping extract."
+    rm -f "$_TMP_ARCHIVE"
+  else
+    mkdir -p "$INSTALL_DIR"
+    _TMP_STAGE="$(mktemp -d)"
+
+    if [ "$_REPO_MODE" = "zip" ]; then
+      command_exists unzip || { $SUDO apt-get install -y -qq unzip >/dev/null 2>&1 || true; }
+      unzip -q "$_TMP_ARCHIVE" -d "$_TMP_STAGE"
+    else
+      tar -xzf "$_TMP_ARCHIVE" -C "$_TMP_STAGE"
+    fi
+
+    # Handle both top-level-dir archives (e.g. diffract-main/...) and flat archives
+    _ENTRIES="$(ls -1 "$_TMP_STAGE" | wc -l | tr -d '[:space:]')"
+    if [ "$_ENTRIES" = "1" ] && [ -d "$_TMP_STAGE/$(ls -1 "$_TMP_STAGE")" ]; then
+      _TOP="$_TMP_STAGE/$(ls -1 "$_TMP_STAGE")"
+      rm -rf "$INSTALL_DIR/repo"
+      mv "$_TOP" "$INSTALL_DIR/repo"
+      rm -rf "$_TMP_STAGE"
+    else
+      rm -rf "$INSTALL_DIR/repo"
+      mv "$_TMP_STAGE" "$INSTALL_DIR/repo"
+    fi
+
+    rm -f "$_TMP_ARCHIVE"
+    printf '%s\n' "$NEW_SHA" > "$SHA_MARKER"
+    CODE_CHANGED=1
+  fi
 fi
 
 # ── 6. Install dependencies ──────────────────────────────────────
