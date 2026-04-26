@@ -114,6 +114,31 @@ start_bridge() {
   }
   info "Cluster container: $cluster_container"
 
+  # Kill any process inside the cluster container that's listening on our
+  # gateway port. These are typically leaked kubectl port-forwards from
+  # previous bridge runs that exited mid-session. We identify them by the
+  # socket inode in /proc/net/tcp rather than by argv, because kubectl's
+  # cmdline sometimes gets cleared (defunct / argv rewrite) making a
+  # grep-based match miss them.
+  local port_hex
+  port_hex="$(printf '%04X' "${GATEWAY_PORT}")"
+  local leaked
+  leaked="$(docker exec "$cluster_container" sh -c '
+    INODE=$(awk "NR>1 && \$2 ~ /:'"$port_hex"'\$/ && \$4 == \"0A\" {print \$10; exit}" /proc/1/net/tcp)
+    [ -z "$INODE" ] && exit 0
+    for pid in /proc/[0-9]*; do
+      test -d "$pid/fd" || continue
+      if ls -l "$pid/fd" 2>/dev/null | grep -q "socket:\[$INODE\]"; then
+        echo "${pid#/proc/}"
+      fi
+    done
+  ' 2>/dev/null || true)"
+  if [ -n "$leaked" ]; then
+    warn "Killing leaked listener PIDs inside cluster (port ${GATEWAY_PORT}): $leaked"
+    docker exec "$cluster_container" sh -c "kill -9 $leaked 2>/dev/null; true" 2>/dev/null || true
+    sleep 1
+  fi
+
   local bridge_ip
   bridge_ip="$(discover_cluster_bridge_ip "$cluster_container")" || {
     err "Cannot determine bridge IP for $cluster_container"
@@ -175,6 +200,64 @@ probe_health() {
   return 0
 }
 
+# Restart the openclaw-gateway *inside the sandbox pod*. Used when the bridge
+# tunnel is healthy but the upstream gateway process has died.
+# Uses `openshell sandbox connect` piped stdin — the documented way to run
+# commands persistently inside a sandbox (mulch mx-f3875a).
+#
+# Restart sequence (order matters):
+#   1. `diffract gateway stop` — graceful shutdown, releases lock normally
+#   2. `pkill -9` — force kill anything that survived
+#   3. `rm -f /tmp/openclaw-*/gateway.*.lock` — clear stale lock files
+#      (kill -9 can't run cleanup handlers; lock file survives and blocks
+#      the next gateway from starting with "gateway already running")
+#   4. nohup+disown start with --auth token
+restart_pod_gateway() {
+  local pipe
+  pipe="$(mktemp -u)"
+  mkfifo "$pipe" || { err "mkfifo failed"; return 1; }
+
+  (cat "$pipe" | openshell sandbox connect "${SANDBOX}" >> "$LOG_FILE" 2>&1) &
+  local connect_pid=$!
+
+  # Give the SSH session a moment to establish
+  sleep 5
+
+  # OpenClaw uses a supervisor pattern: the `openclaw` process (comm `openclaw`)
+  # spawns and restarts `openclaw-gateway` (comm truncated to `openclaw-gatewa`
+  # by Linux TASK_COMM_LEN). A naive `pkill openclaw-gateway` misses the
+  # worker (comm truncated) AND `nohup diffract gateway run` races the
+  # supervisor's auto-respawn, causing EADDRINUSE loops.
+  #
+  # Correct sequence:
+  #   1. `diffract gateway stop`  — asks supervisor to stop the worker
+  #   2. `pkill -9 -f openclaw-gateway` — targets worker via argv, NOT the
+  #      supervisor (whose argv is just "openclaw" and would be matched by
+  #      an overly-broad pattern)
+  #   3. Remove stale lock files (kill -9 can't run cleanup handlers)
+  #   4. `diffract gateway`  — NOT `gateway run`; lets supervisor manage the
+  #      new worker lifecycle (mulch mx-f3875a)
+  {
+    printf 'diffract gateway stop 2>/dev/null || true; sleep 3\n'
+    printf 'pkill -9 -f openclaw-gateway 2>/dev/null || true; sleep 2\n'
+    printf 'rm -f /tmp/openclaw-*/gateway.*.lock /tmp/openclaw/gateway.*.lock 2>/dev/null || true\n'
+    printf 'export HOME=/sandbox\n'
+    printf 'nohup /usr/local/bin/diffract gateway > /tmp/gw.log 2>&1 &\n'
+    printf 'disown; sleep 30; exit\n'
+  } > "$pipe"
+
+  # Wait for the connect session to end; cap at 60s (gateway boot takes 15-30s)
+  local waited=0
+  while kill -0 "$connect_pid" 2>/dev/null && [ "$waited" -lt 60 ]; do
+    sleep 2
+    waited=$((waited + 2))
+  done
+  kill "$connect_pid" 2>/dev/null || true
+  rm -f "$pipe"
+
+  info "pod gateway restart attempt complete"
+}
+
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 info "Starting gateway bridge for sandbox '${SANDBOX}' on port ${GATEWAY_PORT}"
@@ -189,35 +272,40 @@ consecutive_failures=0
 while true; do
   sleep "$PROBE_INTERVAL"
 
-  # Check child processes are still alive
-  kpf_alive=true
-  socat_alive=true
-  [ -z "$KPF_PID" ] || kill -0 "$KPF_PID" 2>/dev/null || kpf_alive=false
-  [ -z "$SOCAT_PID" ] || kill -0 "$SOCAT_PID" 2>/dev/null || socat_alive=false
-
-  if ! $kpf_alive; then
-    warn "kpf process died (pid=$KPF_PID)"
-  fi
-  if ! $socat_alive; then
-    warn "socat process died (pid=$SOCAT_PID)"
-  fi
-
-  if ! $kpf_alive || ! $socat_alive; then
-    warn "Process death detected — restarting bridge"
-    consecutive_failures=$((consecutive_failures + 1))
-    start_bridge || true
-    continue
-  fi
-
-  # HTTP health probe
-  if ! probe_health; then
-    consecutive_failures=$((consecutive_failures + 1))
-    warn "HTTP probe failed (failure #${consecutive_failures}) — restarting bridge"
-    start_bridge || true
-  else
+  # Ground truth is the HTTP probe — if it works, everything is fine
+  # regardless of what kpf/socat are doing.
+  if probe_health; then
     if [ "$consecutive_failures" -gt 0 ]; then
       info "Bridge recovered after ${consecutive_failures} failure(s)"
     fi
     consecutive_failures=0
+    continue
+  fi
+
+  consecutive_failures=$((consecutive_failures + 1))
+  warn "HTTP probe failed (#${consecutive_failures})"
+
+  # First response: restart the pod gateway. This is cheap and idempotent —
+  # if the pod gateway was genuinely healthy, the restart just cycles the
+  # worker. If it was dead (the common case), we recover here without
+  # having to rebuild the tunnel.
+  restart_pod_gateway || true
+  sleep 5
+  if probe_health; then
+    info "Gateway recovered after pod-level restart"
+    consecutive_failures=0
+    continue
+  fi
+
+  # Pod-gateway restart didn't help — the tunnel itself may be stale.
+  warn "Pod-gateway restart didn't recover — rebuilding tunnel"
+  start_bridge || true
+  sleep 3
+  if probe_health; then
+    info "Bridge recovered after tunnel rebuild"
+    consecutive_failures=0
+  else
+    # Still down — keep looping. restart_pod_gateway will be retried next tick.
+    warn "Still down after tunnel rebuild — will retry in ${PROBE_INTERVAL}s"
   fi
 done

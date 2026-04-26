@@ -49,10 +49,11 @@ RUN pip3 install --break-system-packages pyyaml
 # cdn.playwright.dev. The binary is copied to /opt/chromium-headless so that
 # the sandbox user (drwx------) can access it without hitting /root/.cache.
 RUN npm install -g playwright@latest \
-    && npx playwright install chromium \
+    && npx playwright install chromium-headless-shell \
     && npx playwright install-deps chromium \
-    && CHROME=$(find /root/.cache/ms-playwright -name chrome-headless-shell -type f | head -1) \
-    && CHROME_DIR=$(dirname "$CHROME") \
+    && CHROME=$(find /root/.cache/ms-playwright -name chrome-headless-shell -type f 2>/dev/null | head -1) \
+    && [ -n "$CHROME" ] || { echo "ERROR: chrome-headless-shell not found after playwright install" >&2; ls -R /root/.cache/ms-playwright 2>&1 | head -40 >&2; exit 1; } \
+    && CHROME_DIR="$(dirname "$CHROME")" \
     && cp -r "$CHROME_DIR" /opt/chromium-headless \
     && chmod -R 755 /opt/chromium-headless
 
