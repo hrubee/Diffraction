@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { fetchStatus } from "@/lib/status";
 
+// To bypass auth (demo / first-run): set NEXT_PUBLIC_DIFFRACT_SKIP_AUTH=1 before building.
+// To re-enable auth: set NEXT_PUBLIC_DIFFRACT_SKIP_AUTH=0, rebuild UI, restart the service.
+const SKIP_AUTH =
+  process.env.NEXT_PUBLIC_DIFFRACT_SKIP_AUTH === "1" ||
+  process.env.NEXT_PUBLIC_DIFFRACT_SKIP_AUTH === "true";
+
 interface AuthGuardProps {
   children: React.ReactNode;
 }
@@ -22,10 +28,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [status, setStatus] = useState<"checking" | "authenticated" | "unauthenticated">(
-    "checking"
+    SKIP_AUTH ? "authenticated" : "checking"
   );
 
   useEffect(() => {
+    if (SKIP_AUTH) return;
     const check = async () => {
       setStatus("checking");
 

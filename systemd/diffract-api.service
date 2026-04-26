@@ -12,6 +12,7 @@ WorkingDirectory=@@INSTALL_DIR@@/api
 Environment=NODE_ENV=production
 Environment=API_PORT=3001
 Environment=HOST=127.0.0.1
+Environment=DIFFRACT_SKIP_AUTH=1
 Environment=HOME=@@USER_HOME@@
 Environment=PATH=@@NODE_DIR@@:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:@@USER_HOME@@/.local/bin
 EnvironmentFile=-@@USER_HOME@@/.diffract/diffract-api.env
