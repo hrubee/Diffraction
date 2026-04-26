@@ -1,6 +1,8 @@
 // auth.js — API authentication middleware (username/password + session cookies)
 // Admin credentials stored as bcrypt hash in ~/.diffract/credentials.json (mode 600).
 // Sessions are kept in-memory; a fresh API restart requires re-login.
+// To bypass auth (demo / first-run): set DIFFRACT_SKIP_AUTH=1 in the environment.
+// To re-enable auth: set DIFFRACT_SKIP_AUTH=0 and restart the API service.
 
 import crypto from "crypto";
 import fs from "fs";
@@ -128,6 +130,12 @@ export function destroySession(sessionToken) {
  * @type {import("express").RequestHandler}
  */
 export function requireAuth(req, res, next) {
+  const skipAuth = process.env.DIFFRACT_SKIP_AUTH;
+  if (skipAuth === "1" || skipAuth === "true") {
+    req.user = { username: "guest" };
+    return next();
+  }
+
   const cookieValue = extractSessionCookie(req.headers["cookie"]);
   if (cookieValue && sessions.has(cookieValue)) {
     _recordAfterResponse(req, res, true);
