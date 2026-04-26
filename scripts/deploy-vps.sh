@@ -39,7 +39,6 @@ REPO_URL="${REPO_URL:-https://github.com/hrubee/Diffraction.git}"
 DIFFRACT_DOMAIN="${DIFFRACT_DOMAIN:-}"
 OPENSHELL_VERSION="${OPENSHELL_VERSION:-0.0.21}"
 NVM_DIR="${NVM_DIR:-${HOME}/.nvm}"
-DIFFRACT_UI_REPO_URL="${DIFFRACT_UI_REPO_URL:-https://github.com/hrubee/diffract.git}"
 DIFFRACT_UI_INSTALL_DIR="${DIFFRACT_UI_INSTALL_DIR:-/opt/diffract-ui}"
 DIFFRACT_BASE_PATH="${DIFFRACT_BASE_PATH:-/dashboard}"
 DIFFRACT_UI_PORT="${DIFFRACT_UI_PORT:-3000}"
@@ -197,17 +196,10 @@ fi
 
 info "CLI repo ready at $REPO_DIR"
 
-# 4d — Clone / update From Scrtch UI repo
+# 4d — Sync UI source from local repo
 mkdir -p "$DIFFRACT_UI_INSTALL_DIR"
-if [ -d "$DIFFRACT_UI_INSTALL_DIR/.git" ]; then
-  info "UI repo exists at $DIFFRACT_UI_INSTALL_DIR — pulling latest..."
-  git -C "$DIFFRACT_UI_INSTALL_DIR" pull --ff-only 2>&1 | tail -3
-elif [ -d "$DIFFRACT_UI_INSTALL_DIR" ] && [ -n "$(ls -A "$DIFFRACT_UI_INSTALL_DIR" 2>/dev/null)" ]; then
-  info "UI dir already populated — skipping clone"
-else
-  info "Cloning $DIFFRACT_UI_REPO_URL → $DIFFRACT_UI_INSTALL_DIR..."
-  git clone --depth 1 "$DIFFRACT_UI_REPO_URL" "$DIFFRACT_UI_INSTALL_DIR"
-fi
+info "Syncing UI source from $REPO_DIR/ui/ → $DIFFRACT_UI_INSTALL_DIR..."
+rsync -a --delete --exclude=node_modules --exclude=.next "$REPO_DIR/ui/" "$DIFFRACT_UI_INSTALL_DIR/"
 
 # 4e — UI npm install
 info "Installing UI deps..."
