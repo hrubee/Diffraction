@@ -2,3 +2,20 @@
 
 .seeds/issues.jsonl merge=union
 .seeds/templates.jsonl merge=union
+
+# Release tarball: exclude dev-only paths from git archive
+.claude/          export-ignore
+.mulch/           export-ignore
+.overstory/       export-ignore
+.seeds/           export-ignore
+.github/          export-ignore
+.vscode/          export-ignore
+Reference/        export-ignore
+Screenshots/      export-ignore
+Architecture/     export-ignore
+docs/             export-ignore
+e2e/              export-ignore
+instructions.md   export-ignore
+CLAUDE.md         export-ignore
+.DS_Store         export-ignore
+**/.DS_Store      export-ignore
