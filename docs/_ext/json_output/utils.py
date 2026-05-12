@@ -29,9 +29,13 @@ def validate_content_gating_integration(app: Sphinx) -> None:
     """Validate that content gating integration is working properly."""
     # Check if content_gating extension is loaded
     if "content_gating" in app.extensions:
-        logger.info("Content gating extension detected - JSON output will respect content gating rules")
+        logger.info(
+            "Content gating extension detected - JSON output will respect content gating rules"
+        )
     else:
-        logger.debug("Content gating extension not detected - JSON output will process all documents")
+        logger.debug(
+            "Content gating extension not detected - JSON output will process all documents"
+        )
 
     # Log current exclude patterns for debugging
     exclude_patterns = getattr(app.config, "exclude_patterns", [])
@@ -94,7 +98,9 @@ def is_content_gated(config: Config, docname: str) -> bool:
         # Check if this path matches any exclude pattern using fnmatch (supports glob patterns)
         for pattern in sphinx_exclude_patterns:
             if isinstance(pattern, str) and fnmatch.fnmatch(possible_path, pattern):
-                logger.debug(f"Document {docname} is content gated (matches pattern: {pattern})")
+                logger.debug(
+                    f"Document {docname} is content gated (matches pattern: {pattern})"
+                )
                 return True
 
     return False

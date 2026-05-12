@@ -52,7 +52,10 @@ class JSONWriter:
             if docname == "index" and "_documents_array" in data:
                 self._write_array_index(json_path, data)
             # Handle separate content files option
-            elif get_setting(self.config, "separate_content", False) and "content" in data:
+            elif (
+                get_setting(self.config, "separate_content", False)
+                and "content" in data
+            ):
                 self._write_separate_content(json_path, data)
             else:
                 self._write_single_file(json_path, data)

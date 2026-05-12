@@ -64,7 +64,9 @@ def extract_text_content(doctree: nodes.document) -> str:
     return " ".join(text_parts).strip()
 
 
-def extract_clean_text_content(doctree: nodes.document, env: BuildEnvironment | None = None) -> str:
+def extract_clean_text_content(
+    doctree: nodes.document, env: BuildEnvironment | None = None
+) -> str:
     """Extract clean text content, filtering out navigation elements.
 
     Args:
@@ -137,7 +139,9 @@ def _get_improved_link_text(node: nodes.reference, env: BuildEnvironment | None)
     if not target_doc:
         target_doc = attrs.get("reftarget", "")
         # Clean up the target
-        target_doc = target_doc.replace(".html", "").replace(".md", "").replace(".rst", "")
+        target_doc = (
+            target_doc.replace(".html", "").replace(".md", "").replace(".rst", "")
+        )
 
     # Look up title in env.titles
     if target_doc and env and hasattr(env, "titles") and target_doc in env.titles:
@@ -366,7 +370,9 @@ def extract_keywords(content: str, headings: list[dict[str, Any]]) -> list[str]:
         "when",
         "will",
     }
-    keywords = {kw for kw in keywords if len(kw) >= MIN_KEYWORD_LENGTH and kw not in stop_words}
+    keywords = {
+        kw for kw in keywords if len(kw) >= MIN_KEYWORD_LENGTH and kw not in stop_words
+    }
 
     # Return sorted list, limited to reasonable number
     return sorted(keywords)[:MAX_KEYWORDS_RETURNED]

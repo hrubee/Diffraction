@@ -52,7 +52,9 @@ def extract_document_metadata(
                 metadata.update(frontmatter)
 
         metadata_cache[docname] = metadata
-        logger.debug(f"Successfully extracted metadata for {docname}: {len(metadata)} items")
+        logger.debug(
+            f"Successfully extracted metadata for {docname}: {len(metadata)} items"
+        )
 
     except Exception as e:  # noqa: BLE001
         logger.warning(f"Error extracting metadata from {docname}: {e}")
@@ -61,7 +63,9 @@ def extract_document_metadata(
     return metadata_cache[docname]
 
 
-def extract_frontmatter(file_path: str, frontmatter_cache: dict) -> dict[str, Any] | None:
+def extract_frontmatter(
+    file_path: str, frontmatter_cache: dict
+) -> dict[str, Any] | None:
     """Extract YAML frontmatter from markdown files."""
     if file_path in frontmatter_cache:
         return frontmatter_cache[file_path]

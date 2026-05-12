@@ -47,7 +47,9 @@ def extract_headings(doctree: nodes.document) -> list[dict[str, Any]]:
                     parent = parent.parent
 
                 # Generate ID (similar to how Sphinx does it)
-                heading_id = re.sub(r"[^\w\-_]", "", title_text.lower().replace(" ", "-"))
+                heading_id = re.sub(
+                    r"[^\w\-_]", "", title_text.lower().replace(" ", "-")
+                )
 
                 headings.append({"text": title_text, "level": level, "id": heading_id})
 
@@ -56,7 +58,9 @@ def extract_headings(doctree: nodes.document) -> list[dict[str, Any]]:
         if node.parent and not isinstance(node.parent, nodes.section):
             title_text = node.astext().strip()
             if title_text:
-                heading_id = re.sub(r"[^\w\-_]", "", title_text.lower().replace(" ", "-"))
+                heading_id = re.sub(
+                    r"[^\w\-_]", "", title_text.lower().replace(" ", "-")
+                )
                 headings.append({"text": title_text, "level": 1, "id": heading_id})
 
     # Remove duplicates while preserving order
@@ -202,7 +206,9 @@ def _extract_reference_node(
     return None
 
 
-def _extract_download_reference(node: addnodes.download_reference) -> dict[str, Any] | None:
+def _extract_download_reference(
+    node: addnodes.download_reference,
+) -> dict[str, Any] | None:
     """Extract metadata from a download reference node."""
     link_text = node.astext().strip()
     attrs = getattr(node, "attributes", {})

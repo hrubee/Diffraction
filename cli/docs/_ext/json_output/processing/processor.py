@@ -47,7 +47,9 @@ def on_build_finished(app: Sphinx, exception: Exception) -> None:
     all_docs = _filter_documents(app, json_builder, log_func)
 
     # Process documents
-    generated_count, failed_count = _process_documents(app, json_builder, all_docs, log_func)
+    generated_count, failed_count = _process_documents(
+        app, json_builder, all_docs, log_func
+    )
 
     # Final logging
     _log_results(log_func, generated_count, failed_count)
@@ -64,12 +66,16 @@ def _setup_json_builder(app: Sphinx) -> JSONOutputBuilder | None:
         return None
 
 
-def _filter_documents(app: Sphinx, json_builder: JSONOutputBuilder, log_func: Callable[[str], None]) -> list[str]:
+def _filter_documents(
+    app: Sphinx, json_builder: JSONOutputBuilder, log_func: Callable[[str], None]
+) -> list[str]:
     """Filter documents based on gating, incremental build, and size limits."""
     all_docs, gated_docs = _get_initial_documents(app, json_builder)
 
     if gated_docs:
-        log_func(f"Content gating: excluding {len(gated_docs)} documents from JSON generation")
+        log_func(
+            f"Content gating: excluding {len(gated_docs)} documents from JSON generation"
+        )
         verbose = get_setting(app.config, "verbose", False)
         if verbose and gated_docs:
             logger.debug(f"Gated documents: {', '.join(sorted(gated_docs))}")
@@ -78,7 +84,9 @@ def _filter_documents(app: Sphinx, json_builder: JSONOutputBuilder, log_func: Ca
     return _apply_size_filtering(app, all_docs, log_func)
 
 
-def _get_initial_documents(app: Sphinx, json_builder: JSONOutputBuilder) -> tuple[list[str], list[str]]:
+def _get_initial_documents(
+    app: Sphinx, json_builder: JSONOutputBuilder
+) -> tuple[list[str], list[str]]:
     """Get initial document lists, separating processable from gated documents."""
     all_docs = []
     gated_docs = []
@@ -93,20 +101,27 @@ def _get_initial_documents(app: Sphinx, json_builder: JSONOutputBuilder) -> tupl
 
 
 def _apply_incremental_filtering(
-    app: Sphinx, json_builder: JSONOutputBuilder, all_docs: list[str], log_func: Callable[[str], None]
+    app: Sphinx,
+    json_builder: JSONOutputBuilder,
+    all_docs: list[str],
+    log_func: Callable[[str], None],
 ) -> list[str]:
     """Apply incremental build filtering if enabled."""
     if not get_setting(app.config, "incremental_build", False):
         return all_docs
 
-    incremental_docs = [docname for docname in all_docs if json_builder.needs_update(docname)]
+    incremental_docs = [
+        docname for docname in all_docs if json_builder.needs_update(docname)
+    ]
     skipped_count = len(all_docs) - len(incremental_docs)
     if skipped_count > 0:
         log_func(f"Incremental build: skipping {skipped_count} unchanged files")
     return incremental_docs
 
 
-def _apply_size_filtering(app: Sphinx, all_docs: list[str], log_func: Callable[[str], None]) -> list[str]:
+def _apply_size_filtering(
+    app: Sphinx, all_docs: list[str], log_func: Callable[[str], None]
+) -> list[str]:
     """Apply file size filtering if enabled."""
     skip_large_files = get_setting(app.config, "skip_large_files", 0)
     if skip_large_files <= 0:
@@ -119,14 +134,19 @@ def _apply_size_filtering(app: Sphinx, all_docs: list[str], log_func: Callable[[
             if source_path and source_path.stat().st_size <= skip_large_files:
                 filtered_docs.append(docname)
             else:
-                log_func(f"Skipping large file: {docname} ({source_path.stat().st_size} bytes)")
+                log_func(
+                    f"Skipping large file: {docname} ({source_path.stat().st_size} bytes)"
+                )
         except Exception:  # noqa: BLE001, PERF203
             filtered_docs.append(docname)  # Include if we can't check size
     return filtered_docs
 
 
 def _process_documents(
-    app: Sphinx, json_builder: JSONOutputBuilder, all_docs: list[str], log_func: Callable[[str], None]
+    app: Sphinx,
+    json_builder: JSONOutputBuilder,
+    all_docs: list[str],
+    log_func: Callable[[str], None],
 ) -> tuple[int, int]:
     """Process documents either in parallel or sequentially."""
     if get_setting(app.config, "parallel", False):
@@ -135,7 +155,9 @@ def _process_documents(
         return process_documents_sequential(json_builder, all_docs)
 
 
-def _log_results(log_func: Callable[[str], None], generated_count: int, failed_count: int) -> None:
+def _log_results(
+    log_func: Callable[[str], None], generated_count: int, failed_count: int
+) -> None:
     """Log final processing results."""
     log_func(f"Generated {generated_count} JSON files")
     if failed_count > 0:
@@ -143,7 +165,10 @@ def _log_results(log_func: Callable[[str], None], generated_count: int, failed_c
 
 
 def process_documents_parallel(
-    json_builder: JSONOutputBuilder, all_docs: list[str], config: Config, log_func: Callable[[str], None]
+    json_builder: JSONOutputBuilder,
+    all_docs: list[str],
+    config: Config,
+    log_func: Callable[[str], None],
 ) -> tuple[int, int]:
     """Process documents in parallel batches."""
     parallel_workers = get_setting(config, "parallel_workers", "auto")
@@ -184,7 +209,9 @@ def process_documents_parallel(
     return generated_count, failed_count
 
 
-def process_documents_sequential(json_builder: JSONOutputBuilder, all_docs: list[str]) -> tuple[int, int]:
+def process_documents_sequential(
+    json_builder: JSONOutputBuilder, all_docs: list[str]
+) -> tuple[int, int]:
     """Process documents sequentially."""
     generated_count = 0
     failed_count = 0

@@ -47,7 +47,9 @@ class JSONOutputBuilder:
         self.document_discovery = DocumentDiscovery(app, self)
         self.json_formatter = JSONFormatter(app, self)
         self.json_writer = JSONWriter(app)
-        self.hierarchy_builder = HierarchyBuilder(app, self, self.document_discovery, self.json_formatter)
+        self.hierarchy_builder = HierarchyBuilder(
+            app, self, self.document_discovery, self.json_formatter
+        )
 
     def should_generate_json(self, docname: str) -> bool:
         """Check if JSON should be generated for this document."""
@@ -76,7 +78,9 @@ class JSONOutputBuilder:
 
     def extract_document_content(self, docname: str) -> dict[str, Any]:
         """Extract content from document optimized for LLM/search use cases."""
-        return self.cache.with_cache_lock(_extract_document_content, self.env, docname, self.cache.get_content_cache())
+        return self.cache.with_cache_lock(
+            _extract_document_content, self.env, docname, self.cache.get_content_cache()
+        )
 
     def build_json_data(self, docname: str) -> dict[str, Any]:
         """Build optimized JSON data structure for LLM/search use cases."""
@@ -105,6 +109,8 @@ class JSONOutputBuilder:
         """Get all non-hidden documents recursively."""
         return self.document_discovery.get_all_documents_recursive()
 
-    def build_child_json_data(self, docname: str, include_content: bool | None = None) -> dict[str, Any]:
+    def build_child_json_data(
+        self, docname: str, include_content: bool | None = None
+    ) -> dict[str, Any]:
         """Build optimized JSON data for child documents (LLM/search focused)."""
         return self.json_formatter.build_child_json_data(docname, include_content)

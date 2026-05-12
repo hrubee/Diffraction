@@ -116,7 +116,9 @@ def _validate_core_settings(settings: dict[str, Any]) -> None:
     valid_modes = ["disabled", "metadata_only", "full"]
     mode = settings.get("main_index_mode", "full")
     if mode not in valid_modes:
-        logger.warning(f"Invalid main_index_mode '{mode}'. Using 'full'. Valid options: {valid_modes}")
+        logger.warning(
+            f"Invalid main_index_mode '{mode}'. Using 'full'. Valid options: {valid_modes}"
+        )
         settings["main_index_mode"] = "full"
 
     # Validate exclude patterns
@@ -190,7 +192,11 @@ def _validate_integer_settings(settings: dict[str, Any]) -> None:
     for setting, (min_val, max_val) in int_settings.items():
         if setting in settings:
             value = settings[setting]
-            if not isinstance(value, int) or value < min_val or (max_val and value > max_val):
+            if (
+                not isinstance(value, int)
+                or value < min_val
+                or (max_val and value > max_val)
+            ):
                 logger.warning(
                     f"Setting '{setting}' must be integer between {min_val} and {max_val or 'unlimited'}. Using default."
                 )
@@ -201,7 +207,9 @@ def _validate_parallel_workers(settings: dict[str, Any]) -> None:
     """Validate parallel_workers setting (can be 'auto' or integer)."""
     if "parallel_workers" in settings:
         value = settings["parallel_workers"]
-        if value != "auto" and (not isinstance(value, int) or value < 1 or value > MAX_PARALLEL_WORKERS):
+        if value != "auto" and (
+            not isinstance(value, int) or value < 1 or value > MAX_PARALLEL_WORKERS
+        ):
             logger.warning(
                 f"Setting 'parallel_workers' must be 'auto' or integer between 1 and {MAX_PARALLEL_WORKERS}. Using default."
             )
@@ -221,6 +229,10 @@ def _validate_global_metadata(settings: dict[str, Any]) -> None:
     # Validate known top-level keys have dict values
     valid_sections = ["book", "product", "site"]
     for section in valid_sections:
-        if section in global_metadata and not isinstance(global_metadata[section], dict):
-            logger.warning(f"global_metadata.{section} must be a dictionary. Removing invalid value.")
+        if section in global_metadata and not isinstance(
+            global_metadata[section], dict
+        ):
+            logger.warning(
+                f"global_metadata.{section} must be a dictionary. Removing invalid value."
+            )
             del global_metadata[section]

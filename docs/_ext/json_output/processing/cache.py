@@ -55,7 +55,9 @@ class JSONOutputCache:
         """Get the content cache."""
         return self._content_cache
 
-    def needs_update(self, docname: str, source_path: Path, incremental_enabled: bool = False) -> bool:
+    def needs_update(
+        self, docname: str, source_path: Path, incremental_enabled: bool = False
+    ) -> bool:
         """Check if document needs to be updated based on modification time."""
         if not incremental_enabled:
             return True  # Process all files if incremental build is disabled
@@ -103,7 +105,9 @@ class JSONOutputCache:
             "timestamps_size": len(self._timestamps),
         }
 
-    def with_cache_lock(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:  # noqa: ANN401
+    def with_cache_lock(
+        self, func: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any:  # noqa: ANN401
         """Execute function with cache lock held."""
         with self._shared_cache_lock:
             return func(*args, **kwargs)
