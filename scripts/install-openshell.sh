@@ -56,10 +56,10 @@ tmpdir="$(mktemp -d)"
 trap 'rm -rf "$tmpdir"' EXIT
 
 if command -v gh > /dev/null 2>&1; then
-  GH_TOKEN="${GITHUB_TOKEN:-}" gh release download --repo NVIDIA/OpenShell \
+  GH_TOKEN="${GITHUB_TOKEN:-}" gh release download v0.0.21 --repo NVIDIA/OpenShell \
     --pattern "$ASSET" --dir "$tmpdir"
 else
-  curl -fsSL "https://github.com/NVIDIA/OpenShell/releases/latest/download/$ASSET" \
+  curl -fsSL "https://github.com/NVIDIA/OpenShell/releases/download/v0.0.21/$ASSET" \
     -o "$tmpdir/$ASSET"
 fi
 
@@ -68,15 +68,15 @@ tar xzf "$tmpdir/$ASSET" -C "$tmpdir"
 target_dir="/usr/local/bin"
 
 if [ -w "$target_dir" ]; then
-  install -m 755 "$tmpdir/diffract" "$target_dir/diffract"
+  install -m 755 "$tmpdir/openshell" "$target_dir/diffract"
 elif [ "${DIFFRACTION_NON_INTERACTIVE:-}" = "1" ] || [ ! -t 0 ]; then
   target_dir="${XDG_BIN_HOME:-$HOME/.local/bin}"
   mkdir -p "$target_dir"
-  install -m 755 "$tmpdir/diffract" "$target_dir/diffract"
+  install -m 755 "$tmpdir/openshell" "$target_dir/diffract"
   warn "Installed diffract to $target_dir/diffract (user-local path)"
   warn "Ensure $target_dir is on PATH for future shells."
 else
-  sudo install -m 755 "$tmpdir/diffract" "$target_dir/diffract"
+  sudo install -m 755 "$tmpdir/openshell" "$target_dir/diffract"
 fi
 
 info "$("$target_dir/diffract" --version 2>&1 || echo diffract) installed"

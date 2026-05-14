@@ -36,10 +36,14 @@ RUN groupadd -r gateway && useradd -r -g gateway -d /sandbox -s /usr/sbin/nologi
     && mkdir -p /sandbox \
     && chown -R sandbox:sandbox /sandbox
 
-# Install Diffract Agent CLI from npm (uses latest if OPENCLAW_VERSION not set)
-ARG OPENCLAW_VERSION=latest
-RUN npm install -g openclaw@${OPENCLAW_VERSION} \
-    && mv /usr/local/bin/openclaw /usr/local/bin/diffract-cli
+# Install Hermes Agent CLI and white-label as Diffract CLI
+ARG HERMES_VERSION=latest
+RUN pip3 install --break-system-packages "git+https://github.com/NousResearch/hermes-agent.git" \
+    && if [ -f /usr/local/bin/hermes ]; then mv /usr/local/bin/hermes /usr/local/bin/diffract-cli; \
+       else ln -s $(command -v hermes) /usr/local/bin/diffract-cli; fi \
+    && find /usr/local/lib/python3.*/dist-packages/hermes_cli -type f -name "*.py" -exec sed -i 's/⚕ Hermes Agent Status/⚕ Diffract Agent Status/g' {} + \
+    && find /usr/local/lib/python3.*/dist-packages/hermes_cli -type f -name "*.py" -exec sed -i "s/Run 'hermes/Run 'diffract/g" {} + \
+    && find /usr/local/lib/python3.*/dist-packages/hermes_cli -type f -name "*.py" -exec sed -i 's/Hermes Agent/Diffract Agent/g' {} +
 
 # Install PyYAML for blueprint runner
 RUN pip3 install --break-system-packages pyyaml
@@ -78,37 +82,37 @@ COPY scripts/diffract-sandbox-entry.sh /usr/local/bin/diffract
 RUN chmod +x /usr/local/bin/diffract
 
 # ── Directory structure: immutable config + writable state ───────
-# .openclaw/ is locked read-only (Landlock + DAC). Writable state lives
-# in .openclaw-data, reached via symlinks so OpenClaw finds them.
-RUN mkdir -p /sandbox/.openclaw-data/agents/main/agent \
-        /sandbox/.openclaw-data/extensions \
-        /sandbox/.openclaw-data/workspace \
-        /sandbox/.openclaw-data/skills \
-        /sandbox/.openclaw-data/hooks \
-        /sandbox/.openclaw-data/identity \
-        /sandbox/.openclaw-data/devices \
-        /sandbox/.openclaw-data/canvas \
-        /sandbox/.openclaw-data/cron \
-        /sandbox/.openclaw-data/logs \
-        /sandbox/.openclaw-data/completions \
-        /sandbox/.openclaw-data/sessions \
-    && mkdir -p /sandbox/.openclaw \
-    && ln -s /sandbox/.openclaw-data/agents /sandbox/.openclaw/agents \
-    && ln -s /sandbox/.openclaw-data/extensions /sandbox/.openclaw/extensions \
-    && ln -s /sandbox/.openclaw-data/workspace /sandbox/.openclaw/workspace \
-    && ln -s /sandbox/.openclaw-data/skills /sandbox/.openclaw/skills \
-    && ln -s /sandbox/.openclaw-data/hooks /sandbox/.openclaw/hooks \
-    && ln -s /sandbox/.openclaw-data/identity /sandbox/.openclaw/identity \
-    && ln -s /sandbox/.openclaw-data/devices /sandbox/.openclaw/devices \
-    && ln -s /sandbox/.openclaw-data/canvas /sandbox/.openclaw/canvas \
-    && ln -s /sandbox/.openclaw-data/cron /sandbox/.openclaw/cron \
-    && ln -s /sandbox/.openclaw-data/logs /sandbox/.openclaw/logs \
-    && ln -s /sandbox/.openclaw-data/completions /sandbox/.openclaw/completions \
-    && ln -s /sandbox/.openclaw-data/sessions /sandbox/.openclaw/sessions \
-    && touch /sandbox/.openclaw-data/update-check.json \
-    && ln -s /sandbox/.openclaw-data/update-check.json /sandbox/.openclaw/update-check.json \
+# .hermes/ is locked read-only (Landlock + DAC). Writable state lives
+# in .hermes-data, reached via symlinks so Hermes finds them.
+RUN mkdir -p /sandbox/.hermes-data/agents/main/agent \
+        /sandbox/.hermes-data/extensions \
+        /sandbox/.hermes-data/workspace \
+        /sandbox/.hermes-data/skills \
+        /sandbox/.hermes-data/hooks \
+        /sandbox/.hermes-data/identity \
+        /sandbox/.hermes-data/devices \
+        /sandbox/.hermes-data/canvas \
+        /sandbox/.hermes-data/cron \
+        /sandbox/.hermes-data/logs \
+        /sandbox/.hermes-data/completions \
+        /sandbox/.hermes-data/sessions \
+    && mkdir -p /sandbox/.hermes \
+    && ln -s /sandbox/.hermes-data/agents /sandbox/.hermes/agents \
+    && ln -s /sandbox/.hermes-data/extensions /sandbox/.hermes/extensions \
+    && ln -s /sandbox/.hermes-data/workspace /sandbox/.hermes/workspace \
+    && ln -s /sandbox/.hermes-data/skills /sandbox/.hermes/skills \
+    && ln -s /sandbox/.hermes-data/hooks /sandbox/.hermes/hooks \
+    && ln -s /sandbox/.hermes-data/identity /sandbox/.hermes/identity \
+    && ln -s /sandbox/.hermes-data/devices /sandbox/.hermes/devices \
+    && ln -s /sandbox/.hermes-data/canvas /sandbox/.hermes/canvas \
+    && ln -s /sandbox/.hermes-data/cron /sandbox/.hermes/cron \
+    && ln -s /sandbox/.hermes-data/logs /sandbox/.hermes/logs \
+    && ln -s /sandbox/.hermes-data/completions /sandbox/.hermes/completions \
+    && ln -s /sandbox/.hermes-data/sessions /sandbox/.hermes/sessions \
+    && touch /sandbox/.hermes-data/update-check.json \
+    && ln -s /sandbox/.hermes-data/update-check.json /sandbox/.hermes/update-check.json \
     && mkdir -p /sandbox/.diffract/agents/main/agent \
-    && chown -R sandbox:sandbox /sandbox/.openclaw /sandbox/.openclaw-data /sandbox/.diffract
+    && chown -R sandbox:sandbox /sandbox/.hermes /sandbox/.hermes-data /sandbox/.diffract
 
 # ── Build args for config that varies per deployment ─────────────
 # SECURITY: Promote build-args to env vars so the Python script reads
@@ -131,7 +135,7 @@ ENV DIFFRACT_MODEL=${DIFFRACT_MODEL} \
 WORKDIR /sandbox
 USER sandbox
 
-# Write the COMPLETE openclaw.json including gateway config and auth token.
+# Write the COMPLETE hermes.json including gateway config and auth token.
 # This file is immutable at runtime (root-owned, chmod 444).
 # Build args customize per deployment. Auth token is generated per build.
 RUN python3 -c "\
@@ -164,7 +168,7 @@ config = { \
         'auth': {'token': secrets.token_hex(24)} \
     } \
 }; \
-oc = os.path.expanduser('~/.openclaw/openclaw.json'); \
+oc = os.path.expanduser('~/.hermes/hermes.json'); \
 df = os.path.expanduser('~/.diffract/diffract.json'); \
 json.dump(config, open(oc, 'w'), indent=2); os.chmod(oc, 0o600); \
 json.dump(config, open(df, 'w'), indent=2); os.chmod(df, 0o600)"
@@ -173,23 +177,10 @@ json.dump(config, open(df, 'w'), indent=2); os.chmod(df, 0o600)"
 RUN diffract-cli doctor --fix > /dev/null 2>&1 || true \
     && diffract-cli plugins install /opt/diffract > /dev/null 2>&1 || true
 
-# ── Lock config: root-owned, read-only ───────────────────────────
-# SECURITY: chown to root so the sandbox user cannot modify config.
-# chmod 755 on dir (not 1777) prevents symlink replacement attacks.
-# chmod 444 on config file prevents modification.
-# hadolint ignore=DL3002
+# ── Config permissions ──────────────────────────────────────────
+# Allow the sandbox user to modify hermes.json and .env via the setup wizard.
 USER root
-RUN chown root:root /sandbox/.openclaw \
-    && find /sandbox/.openclaw -mindepth 1 -maxdepth 1 -exec chown -h root:root {} + \
-    && chmod 755 /sandbox/.openclaw \
-    && chmod 444 /sandbox/.openclaw/openclaw.json
-
-# Pin config hash at build time for integrity verification.
-# Prevents the agent from creating a copy with a tampered config
-# and restarting the gateway pointing at it.
-RUN sha256sum /sandbox/.openclaw/openclaw.json > /sandbox/.openclaw/.config-hash \
-    && chmod 444 /sandbox/.openclaw/.config-hash \
-    && chown root:root /sandbox/.openclaw/.config-hash
+RUN chown -R sandbox:sandbox /sandbox/.hermes /sandbox/.diffract
 
 # Entrypoint runs as root to drop capabilities and start the gateway
 # as the gateway user, then drops to sandbox for agent commands.

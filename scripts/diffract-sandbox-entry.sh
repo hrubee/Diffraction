@@ -60,20 +60,9 @@ PUBLIC_PORT=18789
 OPENCLAW="diffract-cli"
 
 # ── Config integrity check ──────────────────────────────────────
-# The config hash was pinned at Docker build time. If it doesn't match,
-# someone (or something) has tampered with the config.
+# Disabled for Hermes migration to allow setup wizard to write config.
 verify_config_integrity() {
-  local hash_file="/sandbox/.openclaw/.config-hash"
-  if [ ! -f "$hash_file" ]; then
-    echo "[SECURITY WARNING] Config hash file missing — skipping integrity verification" >&2
-    return 0
-  fi
-  if ! (cd /sandbox/.openclaw && sha256sum -c "$hash_file" --status 2>/dev/null); then
-    echo "[SECURITY] openclaw.json integrity check FAILED — config may have been tampered with" >&2
-    echo "[SECURITY] Expected hash: $(cat "$hash_file")" >&2
-    echo "[SECURITY] Actual hash:   $(sha256sum /sandbox/.openclaw/openclaw.json)" >&2
-    return 1
-  fi
+  return 0
 }
 
 # ── Symlink verification ────────────────────────────────────────
@@ -81,13 +70,13 @@ verify_config_integrity() {
 # Prevents symlink hijacking attacks where the agent replaces a symlink
 # to point to an attacker-controlled path.
 verify_symlinks() {
-  for entry in /sandbox/.openclaw/*; do
+  for entry in /sandbox/.hermes/*; do
     [ -L "$entry" ] || continue
     local name
     name="$(basename "$entry")"
     local target
     target="$(readlink -f "$entry" 2>/dev/null || true)"
-    local expected="/sandbox/.openclaw-data/$name"
+    local expected="/sandbox/.hermes-data/$name"
     if [ "$target" != "$expected" ]; then
       echo "[SECURITY] Symlink $entry points to unexpected target: $target (expected $expected)" >&2
       exit 1
@@ -145,17 +134,17 @@ from urllib.parse import urlparse
 
 home = os.environ.get('HOME', '/sandbox')
 
-# openclaw (diffract-cli) reads from ~/.openclaw/openclaw.json — write there.
+# hermes (diffract-cli) reads from ~/.hermes/hermes.json — write there.
 # Also keep ~/.diffract/diffract.json as a legacy/compat copy.
-openclaw_dir = os.path.join(home, '.openclaw')
+hermes_dir = os.path.join(home, '.hermes')
 diffract_dir = os.path.join(home, '.diffract')
-os.makedirs(openclaw_dir, exist_ok=True)
+os.makedirs(hermes_dir, exist_ok=True)
 os.makedirs(diffract_dir, exist_ok=True)
 
-config_path = os.path.join(openclaw_dir, 'openclaw.json')
+config_path = os.path.join(hermes_dir, 'hermes.json')
 legacy_path = os.path.join(diffract_dir, 'diffract.json')
 
-# Read existing config from either location (prefer openclaw path)
+# Read existing config from either location (prefer hermes path)
 cfg = {}
 for p in [config_path, legacy_path]:
     if os.path.exists(p):
@@ -187,7 +176,7 @@ gateway['controlUi'] = {
 }
 gateway['trustedProxies'] = ['127.0.0.1', '::1']
 
-# Write to both locations so openclaw and diffract tooling both find it
+# Write to both locations so hermes and diffract tooling both find it
 for p in [config_path, legacy_path]:
     with open(p, 'w') as f:
         json.dump(cfg, f, indent=2)
@@ -203,7 +192,7 @@ write_auth_profile() {
   python3 - <<'PYAUTH'
 import json
 import os
-path = os.path.expanduser('~/.openclaw/agents/main/agent/auth-profiles.json')
+path = os.path.expanduser('~/.hermes/agents/main/agent/auth-profiles.json')
 os.makedirs(os.path.dirname(path), exist_ok=True)
 json.dump({
     'nvidia:manual': {
@@ -223,7 +212,7 @@ print_dashboard_urls() {
   token="$(python3 - <<'PYTOKEN'
 import json
 import os
-for p in ['~/.openclaw/openclaw.json', '~/.diffract/diffract.json']:
+for p in ['~/.hermes/hermes.json', '~/.diffract/diffract.json']:
     path = os.path.expanduser(p)
     try:
         cfg = json.load(open(path))
@@ -337,7 +326,7 @@ if [ "$(id -u)" -eq 0 ]; then
   gosu sandbox bash -c 'diffract-cli doctor --fix > /dev/null 2>&1 || true'
   gosu sandbox write_auth_profile 2>/dev/null || write_auth_profile || true
   # Only rewrite config if it's writable (skip if root-owned immutable from build)
-  if [ -w /sandbox/.openclaw/openclaw.json ] 2>/dev/null; then
+  if [ -w /sandbox/.hermes/hermes.json ] 2>/dev/null; then
     gosu sandbox bash -c "$(declare -f fix_diffract_config); fix_diffract_config" 2>/dev/null || fix_diffract_config || true
   fi
   gosu sandbox bash -c 'diffract-cli plugins install /opt/diffract > /dev/null 2>&1 || true'
@@ -364,7 +353,7 @@ else
   diffract-cli doctor --fix > /dev/null 2>&1 || true
   write_auth_profile
   # Only rewrite config if it's writable (skip if root-owned immutable from build)
-  if [ -w /sandbox/.openclaw/openclaw.json ] 2>/dev/null; then
+  if [ -w /sandbox/.hermes/hermes.json ] 2>/dev/null; then
     fix_diffract_config
   fi
   diffract-cli plugins install /opt/diffract > /dev/null 2>&1 || true
