@@ -64,9 +64,9 @@ refresh_path() {
 ensure_diffraction_shim() {
   local npm_bin shim_path
   npm_bin="$(npm config get prefix 2>/dev/null)/bin" || true
-  shim_path="${DIFFRACTION_SHIM_DIR}/diffraction"
+  shim_path="${DIFFRACTION_SHIM_DIR}/diffract"
 
-  if [[ -z "$npm_bin" || ! -x "$npm_bin/diffraction" ]]; then
+  if [[ -z "$npm_bin" || ! -x "$npm_bin/diffract" ]]; then
     return 1
   fi
 
@@ -75,7 +75,7 @@ ensure_diffraction_shim() {
   fi
 
   mkdir -p "$DIFFRACTION_SHIM_DIR"
-  ln -sfn "$npm_bin/diffraction" "$shim_path"
+  ln -sfn "$npm_bin/diffract" "$shim_path"
   refresh_path
   info "Created user-local shim at $shim_path"
   return 0
@@ -220,7 +220,7 @@ install_or_upgrade_ollama() {
 # 3. Diffraction
 # ---------------------------------------------------------------------------
 install_diffraction() {
-  if [[ -f "./package.json" ]] && grep -q '"name": "diffraction"' ./package.json 2>/dev/null; then
+  if [[ -f "./package.json" ]] && grep -q '"name": "@diffract/cli"' ./package.json 2>/dev/null; then
     info "Diffraction package.json found in current directory — installing from source…"
     npm install && npm link
   else
@@ -237,53 +237,53 @@ install_diffraction() {
 # 4. Verify
 # ---------------------------------------------------------------------------
 verify_diffraction() {
-  if command_exists diffraction; then
-    info "Verified: diffraction is available at $(command -v diffraction)"
+  if command_exists diffract; then
+    info "Verified: diffract is available at $(command -v diffract)"
     return 0
   fi
 
-  # diffraction not on PATH — try to diagnose and suggest a fix
-  warn "diffraction is not on PATH after installation."
+  # diffract not on PATH — try to diagnose and suggest a fix
+  warn "diffract is not on PATH after installation."
 
   local npm_bin
   npm_bin="$(npm config get prefix 2>/dev/null)/bin" || true
 
-  if [[ -n "$npm_bin" && -x "$npm_bin/diffraction" ]]; then
+  if [[ -n "$npm_bin" && -x "$npm_bin/diffract" ]]; then
     ensure_diffraction_shim || true
-    if command_exists diffraction; then
-      info "Verified: diffraction is available at $(command -v diffraction)"
+    if command_exists diffract; then
+      info "Verified: diffract is available at $(command -v diffract)"
       return 0
     fi
 
-    warn "Found diffraction at $npm_bin/diffraction but could not expose it on PATH."
+    warn "Found diffract at $npm_bin/diffract but could not expose it on PATH."
     warn ""
     warn "Add one of these directories to your shell profile:"
     warn "  $DIFFRACTION_SHIM_DIR"
     warn "  $npm_bin"
     warn ""
-    warn "Continuing — diffraction is installed but requires a PATH update."
+    warn "Continuing — diffract is installed but requires a PATH update."
     return 0
   else
-    warn "Could not locate the diffraction executable."
+    warn "Could not locate the diffract executable."
     warn "Try running:  npm install -g git+https://github.com/NVIDIA/Diffraction.git"
   fi
 
-  error "Installation failed: diffraction binary not found."
+  error "Installation failed: diffract binary not found."
 }
 
 # ---------------------------------------------------------------------------
 # 5. Onboard
 # ---------------------------------------------------------------------------
 run_onboard() {
-  info "Running diffraction onboard…"
+  info "Running diffract onboard…"
   if [ "${NON_INTERACTIVE:-}" = "1" ]; then
-    diffraction onboard --non-interactive
+    diffract onboard --non-interactive
   elif [ -t 0 ]; then
-    diffraction onboard
+    diffract onboard
   elif exec 3</dev/tty; then
     info "Installer stdin is piped; attaching onboarding to /dev/tty…"
     local status=0
-    diffraction onboard <&3 || status=$?
+    diffract onboard <&3 || status=$?
     exec 3<&-
     return "$status"
   else
@@ -313,7 +313,7 @@ post_install_message() {
   echo "  ──────────────────────────────────────────────────"
   warn "Your current shell may not have the updated PATH."
   echo ""
-  echo "  To use diffraction now, run:"
+  echo "  To use diffract now, run:"
   echo ""
   echo "    source $profile"
   echo ""

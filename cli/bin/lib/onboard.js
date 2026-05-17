@@ -358,7 +358,7 @@ function getContainerRuntime() {
 
 function isOpenshellInstalled() {
   try {
-    runCapture("diffract --version", { ignoreError: false });
+    runCapture("openshell --version", { ignoreError: false });
     return true;
   } catch {
     return false;
@@ -366,10 +366,10 @@ function isOpenshellInstalled() {
 }
 
 function installOpenshell() {
-  console.log("  Installing diffract CLI...");
+  console.log("  Installing openshell engine...");
   run(`bash "${path.join(SCRIPTS, "install-openshell.sh")}"`, { ignoreError: true });
   const localBin = process.env.XDG_BIN_HOME || path.join(process.env.HOME || "", ".local", "bin");
-  if (fs.existsSync(path.join(localBin, "diffract")) && !process.env.PATH.split(path.delimiter).includes(localBin)) {
+  if (fs.existsSync(path.join(localBin, "openshell")) && !process.env.PATH.split(path.delimiter).includes(localBin)) {
     process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH}`;
   }
   return isOpenshellInstalled();
@@ -381,7 +381,7 @@ function sleep(seconds) {
 
 function waitForSandboxReady(sandboxName, attempts = 10, delaySeconds = 2) {
   for (let i = 0; i < attempts; i += 1) {
-    const exists = runCapture(`diffract sandbox get "${sandboxName}" 2>/dev/null`, { ignoreError: true });
+    const exists = runCapture(`openshell sandbox get "${sandboxName}" 2>/dev/null`, { ignoreError: true });
     if (exists) return true;
     sleep(delaySeconds);
   }
@@ -481,26 +481,26 @@ async function preflight() {
     console.log(`  ✓ Container runtime: ${runtime}`);
   }
 
-  // Diffract CLI
+  // OpenShell Engine
   if (!isOpenshellInstalled()) {
-    console.log("  diffract CLI not found. Attempting to install...");
+    console.log("  openshell engine not found. Attempting to install...");
     if (!installOpenshell()) {
-      console.error("  Failed to install diffract CLI.");
-      console.error("  Install manually: https://github.com/NVIDIA/Diffract/releases");
+      console.error("  Failed to install openshell engine.");
+      console.error("  Install manually: https://github.com/NVIDIA/OpenShell/releases");
       process.exit(1);
     }
   }
-  console.log(`  ✓ diffract CLI: ${runCapture("diffract --version 2>/dev/null || echo unknown", { ignoreError: true })}`);
+  console.log(`  ✓ openshell engine: ${runCapture("openshell --version 2>/dev/null || echo unknown", { ignoreError: true })}`);
 
   // Clean up stale Diffract session before checking ports.
   // A previous onboard run may have left the gateway container and port
   // forward running.  If a Diffract-owned gateway is still present, tear
   // it down so the port check below doesn't fail on our own leftovers.
-  const gwInfo = runCapture("diffract gateway info -g diffract 2>/dev/null", { ignoreError: true });
+  const gwInfo = runCapture("openshell gateway info -g diffract 2>/dev/null", { ignoreError: true });
   if (hasStaleGateway(gwInfo)) {
     console.log("  Cleaning up previous Diffract session...");
-    run("diffract forward stop 18789 2>/dev/null || true", { ignoreError: true });
-    run("diffract gateway destroy -g diffract 2>/dev/null || true", { ignoreError: true });
+    run("openshell forward stop 18789 2>/dev/null || true", { ignoreError: true });
+    run("openshell gateway remove -g diffract 2>/dev/null || true", { ignoreError: true });
     console.log("  ✓ Previous session cleaned up");
   }
 
@@ -576,37 +576,8 @@ async function preflight() {
 // ── Step 2: Gateway ──────────────────────────────────────────────
 
 function startGateway(gpu) {
-  step(2, 8, "Starting Diffract gateway");
-
-  // Destroy old gateway
-  run("diffract gateway destroy -g diffract 2>/dev/null || true", { ignoreError: true });
-
-  const gwArgs = ["--name", "diffract"];
-  run(`diffract gateway start ${gwArgs.join(" ")}`, { ignoreError: false });
-
-  // Verify health
-  console.log("  Waiting for gateway to initialize...");
-  for (let i = 0; i < 15; i++) {
-    const status = runCapture("diffract status 2>&1", { ignoreError: true });
-    if (status.toLowerCase().includes("connected") || status.toLowerCase().includes("ready") || status.toLowerCase().includes("active")) {
-      console.log("  ✓ Gateway is healthy");
-      break;
-    }
-    if (i === 14) {
-      console.error("  Gateway failed to start. Run: diffract gateway info");
-      process.exit(1);
-    }
-    sleep(2);
-  }
-
-  // CoreDNS fix — always run. k3s-inside-Docker has broken DNS on all platforms.
-  const runtime = getContainerRuntime();
-  if (shouldPatchCoredns(runtime)) {
-    console.log("  Patching CoreDNS for Colima...");
-    run(`bash "${path.join(SCRIPTS, "fix-coredns.sh")}" diffract 2>&1 || true`, { ignoreError: true });
-  }
-  // Give DNS a moment to propagate
-  sleep(5);
+  step(2, 8, "Skipping standalone gateway (Hermes Agent architecture)");
+  console.log("  ⓘ Gateway runs inside the sandbox container");
 }
 
 // ── Step 3: Sandbox ──────────────────────────────────────────────
@@ -654,7 +625,7 @@ async function createSandbox(gpu) {
       }
     }
     // Destroy old sandbox
-    run(`diffract sandbox delete "${sandboxName}" 2>/dev/null || true`, { ignoreError: true });
+    run(`openshell sandbox delete "${sandboxName}" 2>/dev/null || true`, { ignoreError: true });
     registry.removeSandbox(sandboxName);
   }
 
@@ -717,7 +688,7 @@ async function createSandbox(gpu) {
   // command (awk, always 0) unless pipefail is set. Removing the pipe
   // lets the real exit code flow through to run().
   const createResult = run(
-    `diffract sandbox create ${createArgs.join(" ")} -- env ${envArgs.join(" ")} diffract 2>&1`,
+    `openshell sandbox create ${createArgs.join(" ")} -- env ${envArgs.join(" ")} diffract 2>&1`,
     { ignoreError: true }
   );
 
@@ -739,7 +710,7 @@ async function createSandbox(gpu) {
   console.log("  Waiting for sandbox to become ready...");
   let ready = false;
   for (let i = 0; i < 30; i++) {
-    const list = runCapture("diffract sandbox list 2>&1", { ignoreError: true });
+    const list = runCapture("openshell sandbox list 2>&1", { ignoreError: true });
     if (isSandboxReady(list, sandboxName)) {
       ready = true;
       break;
@@ -750,7 +721,7 @@ async function createSandbox(gpu) {
   if (!ready) {
     // Clean up the orphaned sandbox so the next onboard retry with the same
     // name doesn't fail on "sandbox already exists".
-    const delResult = run(`diffract sandbox delete "${sandboxName}" 2>/dev/null || true`, { ignoreError: true });
+    const delResult = run(`openshell sandbox delete "${sandboxName}" 2>/dev/null || true`, { ignoreError: true });
     console.error("");
     console.error(`  Sandbox '${sandboxName}' was created but did not become ready within 60s.`);
     if (delResult.status === 0) {
@@ -765,15 +736,15 @@ async function createSandbox(gpu) {
 
   // Set up DNS proxy so inference.local resolves inside the sandbox namespace.
   // Without this, the L7 proxy at 10.200.0.1:3128 is unreachable by DNS.
-  run(`bash "${path.join(SCRIPTS, "fix-coredns.sh")}" diffract 2>&1 || true`, { ignoreError: true });
-  run(`bash "${path.join(SCRIPTS, "setup-dns-proxy.sh")}" diffract "${sandboxName}" 2>&1 || true`, { ignoreError: true });
+  run(`bash "${path.join(SCRIPTS, "fix-coredns.sh")}" "" 2>&1 || true`, { ignoreError: true });
+  run(`bash "${path.join(SCRIPTS, "setup-dns-proxy.sh")}" "" "${sandboxName}" 2>&1 || true`, { ignoreError: true });
 
   // Release any stale forward on port 18789 before claiming it for the new sandbox.
   // A previous onboard run may have left the port forwarded to a different sandbox,
   // which would silently prevent the new sandbox's dashboard from being reachable.
-  run(`diffract forward stop 18789 2>/dev/null || true`, { ignoreError: true });
+  run(`openshell forward stop 18789 2>/dev/null || true`, { ignoreError: true });
   // Forward dashboard port to the new sandbox
-  run(`diffract forward start --background 18789 "${sandboxName}"`, { ignoreError: true });
+  run(`openshell forward start --background 18789 "${sandboxName}"`, { ignoreError: true });
 
   // Register only after confirmed ready — prevents phantom entries
   registry.registerSandbox({
@@ -797,7 +768,7 @@ async function installBrowser(sandboxName) {
 
   const sandboxExec = (cmd) => {
     const b64 = Buffer.from(cmd).toString("base64");
-    return `echo ${b64} | base64 -d | diffract sandbox connect ${JSON.stringify(sandboxName)}`;
+    return `echo ${b64} | base64 -d | openshell sandbox connect ${JSON.stringify(sandboxName)}`;
   };
 
   const BAKED_PATH = "/opt/chromium-headless/chrome-headless-shell";
@@ -1108,7 +1079,7 @@ async function setupOpenclaw(sandboxName, model, provider) {
       onboardedAt: new Date().toISOString(),
     };
     const script = buildSandboxConfigSyncScript(sandboxConfig);
-    run(`cat <<'EOF_DIFFRACTION_SYNC' | diffract sandbox connect "${sandboxName}"
+    run(`cat <<'EOF_DIFFRACTION_SYNC' | openshell sandbox connect "${sandboxName}"
 ${script}
 exit
 EOF_DIFFRACTION_SYNC`, { stdio: ["ignore", "ignore", "inherit"], timeout: 10000, ignoreError: true });
@@ -1121,7 +1092,7 @@ EOF_DIFFRACTION_SYNC`, { stdio: ["ignore", "ignore", "inherit"], timeout: 10000,
   // try to download from npm which is blocked before policy presets are applied.
   console.log("  Starting OpenClaw gateway inside sandbox...");
   const startGwScript = `export HOME=/sandbox && nohup /usr/local/bin/diffract gateway run --bind loopback --port 18789 > /tmp/gw.log 2>&1 &`;
-  run(`printf '%s\nexit\n' '${startGwScript}' | diffract sandbox connect "${sandboxName}"`, { stdio: ["ignore", "ignore", "inherit"], timeout: 10000, ignoreError: true });
+  run(`printf '%s\nexit\n' '${startGwScript}' | openshell sandbox connect "${sandboxName}"`, { stdio: ["ignore", "ignore", "inherit"], timeout: 10000, ignoreError: true });
 
   // Wait for gateway to become healthy
   let healthy = false;
@@ -1271,7 +1242,7 @@ function printDashboard(sandboxName, model, provider) {
   console.log(`  Model        ${model} (${providerLabel})`);
   console.log(`  Inference     ${nimStat.running ? "NIM container running" : providerLabel}`);
   console.log(`  ${"─".repeat(50)}`);
-  console.log(`  Run:         diffract sandbox connect ${sandboxName}`);
+  console.log(`  Run:         openshell sandbox connect ${sandboxName}`);
   console.log(`  Status:      diffract status`);
   console.log(`  Logs:        diffract logs ${sandboxName} --follow`);
   console.log(`  ${"─".repeat(50)}`);
